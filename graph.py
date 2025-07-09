@@ -6,6 +6,8 @@ from typing import List, Literal
 from sentence_transformers import SentenceTransformer
 import numpy as np
 import pandas as pd
+import networkx as nx
+import matplotlib.pyplot as plt
 
 from dotenv import load_dotenv
 import os
@@ -53,6 +55,98 @@ def name_in(name: str, name_list: List[str]) -> bool:
                 return True
     return False
 
+def new_title(title):
+    t_split = title.split()
+    new_title = ""
+    current = ""
+    n_chars = 10
+    for word in t_split:
+        current += " "+word
+        if len(current) > n_chars:
+            new_title += current
+            new_title += "\n"
+            current = ""
+    new_title += current
+    return new_title
+
+def node_size(n):
+    if n:
+        return 5000
+    else:
+        return 1500
+
+def font_size(n):
+    if n:
+        return 5
+    else:
+        return 3
+
+def generate_book_graph_figure(chapter: int, book: str, sections: set[tuple[int, int, int]], mass = False):
+    book_df = pd.read_pickle("book_embeddings.pkl")
+    df = book_df[(book_df['file_type'].isin([book])) & (book_df['0'].isin([chapter]))]
+    t = df['title'].tolist()
+    s = df['sections'].tolist()
+
+    titles = [s[i] +": "+ t[i] for i in range(len(df))]
+    first = df['1'].tolist()
+    second = df['2'].tolist()
+    G = nx.DiGraph()
+    G.add_nodes_from([new_title(t) for t in titles])
+    for i in range(len(df)):
+        if second[i] != 0:
+            for j in range(len(df)):
+                if second[j] == 0 and first[i] == first[j]:
+                    G.add_edge(new_title(titles[j]), new_title(titles[i]))
+                    break
+        else:
+            if first[i]!=0:
+                for j in range(len(df)):
+                    if first[j] == 0:
+                        main_title = new_title(titles[j])
+                        G.add_edge(main_title, new_title(titles[i]))
+                        break
+
+    
+    node_sizes = [node_size(G.out_degree(n)) for n in G.nodes()]
+    font_sizes = [font_size(G.out_degree(n)) for n in G.nodes()]
+    node_colors = []
+    for i in range(len(df)):
+        if (chapter, first[i], second[i]) in sections:
+            node_colors.append("green")
+        else:
+            node_colors.append("lightblue")
+
+    A = nx.nx_agraph.to_agraph(G)
+
+    for i, n in enumerate(G.nodes()):
+        r = np.sqrt(node_sizes[i]/100)
+        A.get_node(n).attr.update(width=r, height=r, fixedsize="true")
+
+    A.graph_attr.update(ranksep='1', nodesep='1')
+    A.layout(prog="dot")
+
+    pos = {n: tuple(map(float, A.get_node(n).attr["pos"].split(','))) for n in G.nodes()}
+
+    for i in range(len(df)):
+        if first[i]==0 and second[i]==0:
+            node_sizes[i] = 30000
+            font_sizes[i] = 10
+            break
+    plt.figure(figsize=(12, 5))
+    nx.draw(G, pos, with_labels=False, node_size=node_sizes, node_color=node_colors)
+    for i,(n, (x, y)) in enumerate(pos.items()):
+        if first[i]==0 and second[i]==0:
+            plt.text(x, y-7*len(n.split("\n")), n, fontsize=font_sizes[i], ha='center', va='center')
+        else:
+            plt.text(x, y, n, fontsize=font_sizes[i], ha='center', va='center')
+    
+    if mass:
+        plt.savefig("chapter_images/" + str(chapter) + ".svg", format="svg", bbox_inches="tight")
+    else:
+        plt.savefig("results/chapter-im.svg", format="svg", bbox_inches="tight")
+    plt.close()
+
+
 """
 Nodes
 """
@@ -72,7 +166,7 @@ def InformationNode(state: State) -> State:
     return {"query_description": query_description}
 
 def RetrieveNode(state: State) -> State:
-    df = pd.read_pickle('test_embeddings.pkl')
+    df = pd.read_pickle('book_embeddings.pkl')
     df = df[df['file_type'].isin(['Advanced Book'])]
     query_description = state.get('query_description')
     vector = vector_embedding_model.encode(query_description.keywords + [query_description.problem_description])
@@ -81,25 +175,38 @@ def RetrieveNode(state: State) -> State:
     vec_prod = np.einsum('i,k->ki',np.linalg.norm(vector, axis = -1),np.linalg.norm(embeddings, axis = -1))
     cosines = dot_prod/vec_prod
     df['cosine'] = np.max(cosines, axis = -1)
-    df = df.sort_values(by = 'cosine', ascending = False)
-    df = df.head(5)
+    df = df[df['cosine'] >= 0.6]
+
     return {"df": df}
 
-def GenerateNode(state: State) -> State:
+def GenerateBookNode(state: State) -> State:
     query = state.get('query')
     df = state.get("df")
+
     content = df['content'].tolist()
     authors = df['authors'].tolist()
+    sections = df['sections'].tolist()
+    titles = df['title'].tolist()
+    book = df['file_type'].tolist()
+    chapters = df['0'].tolist()
+    first = df['1'].tolist()
+    second = df['2'].tolist()
+    zipped_book = set(zip(chapters, book))
+    s = set(zip(chapters, first, second))
 
-    context = "\n\n".join(["Authors: " + ",\t".join(authors[i]) + "\n Content: " + content[i] for i in range(len(df))])
-    msg = [{"role": "system", "content": "You are the Generator in RAG application."+
-            "You are going to state who the user should contact about their query, "+
-            "based on the author/authors behind the most relevant documents"+
-            "\n Context:\n" + context}, {"role": "user", "content": query}]
+    for c, b in zipped_book:
+        generate_book_graph_figure(c, b, sections=s, mass = False)
+
+    context = "\n\n".join(["Section " + sections[i] + " in book: " + book[i] + "\n Title" + titles[i] + "\n Authors: " + ",\t".join(authors[i]) + "\n Content: " + content[i] for i in range(len(df))])
+    msg = [{"role": "system", "content": f"""You are the Generator in a RAG application.
+            You are going to state in which book and which section the user can learn more,
+            and who they should contact based on the authors of the relevant book sections.
+            Do not mention the title.
+            \n Context:\n {context}"""}, {"role": "user", "content": query}]
     return {"response": weak_client.invoke(msg).content}
 
 def RetrieveAuthorNode(state: State) -> State:
-    df = pd.read_pickle('test_embeddings.pkl')
+    df = pd.read_pickle('book_embeddings.pkl')
     authors_names = state.get('query_description').authors
     df = df[df['authors'].apply(lambda x: bool([True for a in x if name_in(a, authors_names)]))]
     return {"df": df}
@@ -107,7 +214,7 @@ def RetrieveAuthorNode(state: State) -> State:
 def GenerateAuthorNode(state: State) -> State:
     df = state.get("df")
     query = state.get("query")
-    titles = df['section_name'].tolist()
+    titles = df['title'].tolist()
     authors = [", ".join(a) for a in df['authors']]
     context = "\n\n".join([" title: " + i+"\n Authors: "+j for i,j in zip(titles, authors)])
     msg = [{"role": "system", "content": "You are the Generator in RAG application. "+
@@ -117,16 +224,24 @@ def GenerateAuthorNode(state: State) -> State:
         "\n Context:\n" + context}, {"role": "user", "content": query}]
     return {"response": weak_client.invoke(msg).content}
 
+def SearchNode(state: State) -> State:
+    return {}
+
 """
 Routers
 """
 
-def WhatKindOfRetrieval(state: State) -> Literal["RetrieveNode","RetrieveAuthorNode"]:
+def RetrievalRouter(state: State) -> Literal["RetrieveNode","RetrieveAuthorNode"]:
     if state.get('query_description').authors:
         return "RetrieveAuthorNode"
     else:
         return "RetrieveNode"
 
+def BookRouter(state: State) -> Literal["GenerateBookNode", "SearchNode"]:
+    if len(state.get('df')):
+        return "GenerateBookNode"
+    else:
+        return "SearchNode"
 
 """
 Setting up the graph
@@ -136,18 +251,24 @@ graph_builder = StateGraph(State)
 
 graph_builder.add_node("InformationNode", InformationNode)
 graph_builder.add_node("RetrieveNode", RetrieveNode)
-graph_builder.add_node("GenerateNode", GenerateNode)
+graph_builder.add_node("GenerateBookNode", GenerateBookNode)
 graph_builder.add_node("RetrieveAuthorNode", RetrieveAuthorNode)
 graph_builder.add_node("GenerateAuthorNode", GenerateAuthorNode)
+graph_builder.add_node("SearchNode", SearchNode)
 
 graph_builder.add_edge(START, "InformationNode")
-graph_builder.add_conditional_edges("InformationNode", WhatKindOfRetrieval, {"RetrieveNode": "RetrieveNode", "RetrieveAuthorNode": "RetrieveAuthorNode"})
-graph_builder.add_edge("RetrieveNode", "GenerateNode")
+graph_builder.add_conditional_edges("InformationNode", RetrievalRouter, {"RetrieveNode": "RetrieveNode", "RetrieveAuthorNode": "RetrieveAuthorNode"})
+graph_builder.add_conditional_edges("RetrieveNode", BookRouter, {"GenerateBookNode":"GenerateBookNode", "SearchNode":"SearchNode"})
 graph_builder.add_edge("RetrieveAuthorNode", "GenerateAuthorNode")
-graph_builder.add_edge("GenerateNode", END)
+graph_builder.add_edge("GenerateBookNode", "SearchNode")
+graph_builder.add_edge("SearchNode", END)
 graph_builder.add_edge("GenerateAuthorNode", END)
 
 graph = graph_builder.compile()
+graph.get_graph().draw_mermaid_png(output_file_path='graph_vizualization.png')
+
+# for i in range(1,15):
+#     generate_book_graph_figure(chapter = i, book = "Advanced Book", sections=set(), mass = True)
 
 while True:
     question = input("Enter question: ")

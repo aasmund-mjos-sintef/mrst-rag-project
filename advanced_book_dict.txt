@@ -1,0 +1,14 @@
+1:Unstructured PEBI Grids Conforming to Lower-Dimensional Objects
+2:Nonlinear Finite-Volume Methods for the Flow Equation in Porous Media
+3:Implicit Discontinuous Galerkin Methods for Transport Equations in Porous Media
+4:Multiscale Pressure Solvers for Stratigraphic and Polytopal Grids
+5:Better AD Simulators with Flexible State Functions and Accurate Discretizations
+6:Faster Simulation with Optimized Automatic Differentiation and Compiled Linear Solvers
+7:Using State Functions and MRST’s AD-OO Framework to Implement Simulators for Chemical EOR
+8:Compositional Simulation with the AD-OO Framework
+9:Embedded Discrete Fracture Models
+10:Numerical Modeling of Fractured Unconventional Oil and Gas Reservoirs
+11:A Unified Framework for Flow Simulation in Fractured Reservoirs
+12:Simulation of Geothermal Systems Using MRST
+13:A Finite-Volume-Based Module for Unsaturated Poroelasticity
+14:A Brief Introduction to Poroelasticity and Simulation of Coupled Geomechanics and Flow in MRST

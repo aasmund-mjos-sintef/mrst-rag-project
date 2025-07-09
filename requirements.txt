@@ -16,3 +16,5 @@ scikit-learn
 matplotlib
 langgraph
 langchain-docling
+networkx
+pygraphviz
