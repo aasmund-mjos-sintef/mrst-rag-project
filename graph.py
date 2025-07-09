@@ -8,6 +8,7 @@ import numpy as np
 import pandas as pd
 import networkx as nx
 import matplotlib.pyplot as plt
+from matplotlib.figure import Figure
 
 from dotenv import load_dotenv
 import os
@@ -35,6 +36,7 @@ class State(TypedDict):
     attempts: int
     df: pd.DataFrame
     response: str
+    figures: List[Figure]
 
 """
 Helper functions
@@ -81,7 +83,7 @@ def font_size(n):
     else:
         return 3
 
-def generate_book_graph_figure(chapter: int, book: str, sections: set[tuple[int, int, int]], mass = False):
+def generate_book_graph_figure(chapter: int, book: str, sections: set[tuple[int, int, int]]):
     book_df = pd.read_pickle("book_embeddings.pkl")
     df = book_df[(book_df['file_type'].isin([book])) & (book_df['0'].isin([chapter]))]
     t = df['title'].tolist()
@@ -129,22 +131,20 @@ def generate_book_graph_figure(chapter: int, book: str, sections: set[tuple[int,
 
     for i in range(len(df)):
         if first[i]==0 and second[i]==0:
-            node_sizes[i] = 30000
+            node_sizes[i] = 20000
             font_sizes[i] = 10
             break
-    plt.figure(figsize=(12, 5))
-    nx.draw(G, pos, with_labels=False, node_size=node_sizes, node_color=node_colors)
-    for i,(n, (x, y)) in enumerate(pos.items()):
-        if first[i]==0 and second[i]==0:
-            plt.text(x, y-7*len(n.split("\n")), n, fontsize=font_sizes[i], ha='center', va='center')
+
+    fig, ax = plt.subplots(figsize=(15, 6))
+    nx.draw(G, pos, with_labels=False, node_size=node_sizes, node_color=node_colors, ax=ax)
+    for i, (n, (x, y)) in enumerate(pos.items()):
+        if first[i] == 0 and second[i] == 0:
+            ax.text(x, y - 7 * len(n.split("\n")), n, fontsize=font_sizes[i], ha='center', va='center')
         else:
-            plt.text(x, y, n, fontsize=font_sizes[i], ha='center', va='center')
-    
-    if mass:
-        plt.savefig("chapter_images/" + str(chapter) + ".svg", format="svg", bbox_inches="tight")
-    else:
-        plt.savefig("results/chapter-im.svg", format="svg", bbox_inches="tight")
-    plt.close()
+            ax.text(x, y, n, fontsize=font_sizes[i], ha='center', va='center')
+
+    ax.set_axis_off()
+    return fig
 
 
 """
@@ -174,6 +174,7 @@ def RetrieveNode(state: State) -> State:
     dot_prod = np.einsum('ij,kj->ki', vector, embeddings)
     vec_prod = np.einsum('i,k->ki',np.linalg.norm(vector, axis = -1),np.linalg.norm(embeddings, axis = -1))
     cosines = dot_prod/vec_prod
+    print(f"Max cosine found:  {np.max(cosines)} \n")
     df['cosine'] = np.max(cosines, axis = -1)
     df = df[df['cosine'] >= 0.6]
 
@@ -194,8 +195,10 @@ def GenerateBookNode(state: State) -> State:
     zipped_book = set(zip(chapters, book))
     s = set(zip(chapters, first, second))
 
+    figures = []
+
     for c, b in zipped_book:
-        generate_book_graph_figure(c, b, sections=s, mass = False)
+        figures.append(generate_book_graph_figure(c, b, sections=s))
 
     context = "\n\n".join(["Section " + sections[i] + " in book: " + book[i] + "\n Title" + titles[i] + "\n Authors: " + ",\t".join(authors[i]) + "\n Content: " + content[i] for i in range(len(df))])
     msg = [{"role": "system", "content": f"""You are the Generator in a RAG application.
@@ -203,7 +206,7 @@ def GenerateBookNode(state: State) -> State:
             and who they should contact based on the authors of the relevant book sections.
             Do not mention the title.
             \n Context:\n {context}"""}, {"role": "user", "content": query}]
-    return {"response": weak_client.invoke(msg).content}
+    return {"response": weak_client.invoke(msg).content, "figures": figures}
 
 def RetrieveAuthorNode(state: State) -> State:
     df = pd.read_pickle('book_embeddings.pkl')
@@ -266,14 +269,3 @@ graph_builder.add_edge("GenerateAuthorNode", END)
 
 graph = graph_builder.compile()
 graph.get_graph().draw_mermaid_png(output_file_path='graph_vizualization.png')
-
-# for i in range(1,15):
-#     generate_book_graph_figure(chapter = i, book = "Advanced Book", sections=set(), mass = True)
-
-while True:
-    question = input("Enter question: ")
-    print("\n")
-    state = graph.invoke(State(query = question))
-    print(state.get('response'))
-    print("\n")
-    
