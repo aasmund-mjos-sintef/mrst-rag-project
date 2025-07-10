@@ -24,7 +24,7 @@ if "figures" not in st.session_state:
 
 def run_graph():
     query = st.session_state.query
-    response_area.text("...")
+    response_area.text("Generating answer...")
 
     state = graph.invoke(State(query = query))
 
