@@ -1,5 +1,4 @@
 from langchain_openai import ChatOpenAI
-from langchain_core.messages import BaseMessage
 from langgraph.graph import StateGraph, START, END
 from pydantic import BaseModel, Field
 from typing_extensions import TypedDict
@@ -18,7 +17,7 @@ load_dotenv()
 openai_api_key = os.getenv("OPENAI_API_KEY")
 langchain_openai_api_key = os.getenv("LANGCHAIN_OPENAI_API_KEY")
 
-strong_client = ChatOpenAI(model="gpt-4o", temperature=0.0, openai_api_key=langchain_openai_api_key)
+strong_client = ChatOpenAI(model="gpt-4o-mini", temperature=0.0, openai_api_key=langchain_openai_api_key)
 weak_client = ChatOpenAI(model="gpt-3.5-turbo", temperature=0.0, openai_api_key = langchain_openai_api_key)
 
 vector_embedding_model = SentenceTransformer('sentence-transformers/all-mpnet-base-v2')
@@ -27,23 +26,27 @@ vector_embedding_model = SentenceTransformer('sentence-transformers/all-mpnet-ba
 Helper classes -- Called with client.with_structured_output(ClassName)
 """
 
-class QueryDescription(BaseModel):
+class QueryDescriptionWithTools(BaseModel):
     keywords: List[str] = Field(description = "Keywords related to the users query")
     authors: List[str] = Field(description = "The authors mentioned in the users query")
     problem_description: str = Field(description = "The users problem compacted into one sentence")
     tools: bool = Field(description = "Wether or not should call tools")
     tools_input: str = Field(description = "The input to the tool")
 
+class QueryDescription(BaseModel):
+    keywords: List[str] = Field(description = "Keywords related to the users query")
+    authors: List[str] = Field(description = "The authors mentioned in the users query")
+    problem_description: str = Field(description = "The users problem compacted into one sentence")
+
 class State(TypedDict):
     query: str
-    query_description : QueryDescription
+    query_description : QueryDescriptionWithTools
     attempts: int
     df: pd.DataFrame
     response: str
     figures: List[Figure]
     tools_calls: List[tuple[str, List[str]]]
-    visited_links: List[str]
-    n_tool_calls: int
+    visited_link: str
 
 """
 Helper functions
@@ -184,12 +187,13 @@ def InformationNode(state: State) -> State:
         """},
         {"role": "user", "content": query}]
 
-        query_description = strong_client.with_structured_output(QueryDescription).invoke(prompt)
+        query_description = strong_client.with_structured_output(QueryDescriptionWithTools).invoke(prompt)
 
         return {"query_description": query_description}
 
     else:
         tools_calls = state.get('tools_calls')
+
         prompt = [{"role": "system", "content": f"""
         You are an assistant for the Matlab Reservoir Toolbox developed by SINTEF.
         You are going to extract keywords, authors and a problem description from the user query.
@@ -197,33 +201,32 @@ def InformationNode(state: State) -> State:
         so you should be very specific when generating keywords. For example, do NOT include keywords like
         'reservoir simulation' or 'numerical simulation'.
                    
-        You can use the tool "web_search_mrst":
+        You have used the tool "web_search_mrst":
         name: {web_search_mrst.name}
         description: {web_search_mrst.description}
 
-        You have already generated keywords, and called the tool once.
-        Input should be one of the links found in your latest tool call.
-        Here is your latest answer, and here is your latest tool call.
-
-        query_description:
-        {query_description}
+        Here is your tool call.
 
         tools_calls:
-        {tools_calls}
+        {tools_calls[0]}
 
         """},
         {"role": "user", "content": query}]
 
         response = strong_client.with_structured_output(QueryDescription).invoke(prompt)
-        response.authors = query_description.authors
-        response.keywords = response.keywords + query_description.keywords
+        return_val = QueryDescriptionWithTools(
+            authors = query_description.authors,
+            keywords = list(set(response.keywords + query_description.keywords)),
+            problem_description = response.problem_description,
+            tools = False,
+            tools_input = ""
+            )
 
-        return {"query_description": response}
+        return {"query_description": return_val}
 
-def ToolsNode(state: State) -> State:
-    n_tool_calls = state.get('n_tool_calls') if state.get('n_tool_calls') != None else 0
+def SearchMRSTModulesNode(state: State) -> State:
     link = state.get('query_description').tools_input
-    return {"tools_calls": [web_search_mrst.invoke(input = link)], "visited_links": [link], 'n_tool_calls': n_tool_calls+1}
+    return {"tools_calls": [web_search_mrst.invoke(input = link)], "visited_link": link}
 
 def RetrieveNode(state: State) -> State:
     df = pd.read_pickle('book_embeddings.pkl')
@@ -296,16 +299,11 @@ def SearchNode(state: State) -> State:
 Routers
 """
 
-def RetrievalRouter(state: State) -> Literal["ToolsNode","RetrieveNode","RetrieveAuthorNode"]:
+def RetrievalRouter(state: State) -> Literal["SearchMRSTModulesNode","RetrieveNode","RetrieveAuthorNode"]:
     queryDescription = state.get('query_description')
     if queryDescription.tools:
-        if state.get('visited_links') == None:
-            return "ToolsNode"
-        if state.get('n_tool_calls') == None:
-            return "ToolsNode"
-        if queryDescription.tools_input not in state.get('visited_links') and state.get('n_tool_calls')<3:
-            return "ToolsNode"
-    
+        return "SearchMRSTModulesNode"
+
     if queryDescription.authors:
         return "RetrieveAuthorNode"
     else:
@@ -324,7 +322,7 @@ Setting up the graph
 graph_builder = StateGraph(State)
 
 graph_builder.add_node("InformationNode", InformationNode)
-graph_builder.add_node("ToolsNode", ToolsNode)
+graph_builder.add_node("SearchMRSTModulesNode", SearchMRSTModulesNode)
 graph_builder.add_node("RetrieveNode", RetrieveNode)
 graph_builder.add_node("GenerateBookNode", GenerateBookNode)
 graph_builder.add_node("RetrieveAuthorNode", RetrieveAuthorNode)
@@ -332,9 +330,9 @@ graph_builder.add_node("GenerateAuthorNode", GenerateAuthorNode)
 graph_builder.add_node("SearchNode", SearchNode)
 
 graph_builder.add_edge(START, "InformationNode")
-graph_builder.add_conditional_edges("InformationNode", RetrievalRouter, {"ToolsNode": "ToolsNode", "RetrieveNode": "RetrieveNode", "RetrieveAuthorNode": "RetrieveAuthorNode"})
+graph_builder.add_conditional_edges("InformationNode", RetrievalRouter, {"SearchMRSTModulesNode": "SearchMRSTModulesNode", "RetrieveNode": "RetrieveNode", "RetrieveAuthorNode": "RetrieveAuthorNode"})
 graph_builder.add_conditional_edges("RetrieveNode", BookRouter, {"GenerateBookNode":"GenerateBookNode", "SearchNode":"SearchNode"})
-graph_builder.add_edge("ToolsNode", "InformationNode")
+graph_builder.add_edge("SearchMRSTModulesNode", "InformationNode")
 graph_builder.add_edge("RetrieveAuthorNode", "GenerateAuthorNode")
 graph_builder.add_edge("GenerateBookNode", "SearchNode")
 graph_builder.add_edge("SearchNode", END)

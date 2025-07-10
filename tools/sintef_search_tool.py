@@ -5,7 +5,7 @@ from typing import List
 
 @tool
 def web_search_mrst(filename: str) -> tuple[str, List[str]]:
-    """Scrape a SINTEF MRST website with filename, and return content + explicit links to other sites"""
+    """Scrape a SINTEF MRST website with filename, and return content and explicit links to other mrst sites"""
     try:
         response = requests.get(filename)
         soup = BeautifulSoup(response.content, 'html.parser')
