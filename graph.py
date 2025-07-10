@@ -150,10 +150,16 @@ def generate_book_graph_figure(chapter: int, book: str, sections: set[tuple[int,
     nx.draw(G, pos, with_labels=False, node_size=node_sizes, node_color=node_colors, ax=ax)
     for i, (n, (x, y)) in enumerate(pos.items()):
         if first[i] == 0 and second[i] == 0:
-            ax.text(x, y - 7 * len(n.split("\n")), n, fontsize=font_sizes[i], ha='center', va='center')
+            ax.text(x, y, n, fontsize=font_sizes[i], ha='center', va='center')
         else:
             ax.text(x, y, n, fontsize=font_sizes[i], ha='center', va='center')
 
+    max_radius = max(np.sqrt(s / 10) for s in node_sizes)
+    x_vals, y_vals = zip(*pos.values())
+
+    ax.set_xlim(min(x_vals) - 3*max_radius, max(x_vals) + 3*max_radius)
+    ax.set_ylim(min(y_vals) - 3*max_radius, max(y_vals) + 7*max_radius)
+    
     ax.set_axis_off()
     return fig
 
