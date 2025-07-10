@@ -47,6 +47,7 @@ class State(TypedDict):
     figures: List[Figure]
     tools_calls: List[tuple[str, List[str]]]
     visited_link: str
+    chapter_info: tuple[int, str]
 
 """
 Helper functions
@@ -271,7 +272,7 @@ def GenerateBookNode(state: State) -> State:
             and who they should contact based on the authors of the relevant book sections.
             Do not mention the title.
             \n Context:\n {context}"""}, {"role": "user", "content": query}]
-    return {"response": weak_client.invoke(msg).content, "figures": figures}
+    return {"response": weak_client.invoke(msg).content, "figures": figures, "chapter_info": list(zipped_book)}
 
 def RetrieveAuthorNode(state: State) -> State:
     df = pd.read_pickle('book_embeddings.pkl')
