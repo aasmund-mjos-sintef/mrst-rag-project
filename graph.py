@@ -11,6 +11,13 @@ import matplotlib.pyplot as plt
 from matplotlib.figure import Figure
 from tools.sintef_search_tool import web_search_mrst
 from langgraph.prebuilt import create_react_agent
+from collections import Counter
+
+import re
+from nltk.corpus import stopwords
+from nltk import download as nltk_download
+nltk_download('stopwords', quiet=True)
+stop_words = set(stopwords.words('english'))
 
 from dotenv import load_dotenv
 import os
@@ -58,6 +65,7 @@ class State(TypedDict):
     authors_total_chunks_dict: dict[str, int]
     authors_papers_percentage_dict: dict[str, float]
     authors_chunks_percentage_dict: dict[str, float]
+    sources: set[str]
 
 class Authors(BaseModel):
     authors: List[str] = Field(description = "List of the authors mentioned in the users query. Has to be specifically mentioned by the user!")
@@ -114,6 +122,29 @@ def font_size(n):
         return 5
     else:
         return 3
+    
+def get_bigram_freq(text):
+    # Remove punctuation and convert to lowercase
+    words = re.findall(r'\w+', text.lower()) 
+
+    # Remove stop words and words with less than 3 characters
+    words = [word for word in words if word not in stop_words and len(word) > 2]
+
+    # Create list of bigrams
+    bigrams = zip(words, words[1:]) # pair each word (words) with the next word (words[1:])
+    bigram_list = [' '.join(bigram) for bigram in bigrams] # join the words in the bigram with a space
+
+    # Count the frequency of each bigram
+    return Counter(bigram_list)
+
+def get_top_bigrams(df):
+    total_text = ""
+    for c in df['content'].tolist():
+        total_text += c
+
+    counter = get_bigram_freq(total_text)
+    return counter.most_common(10)
+    
 
 def generate_book_graph_figure(chapter: int, book: str, sections: set[tuple[int, int, int]]):
     book_df = pd.read_pickle("book_embeddings.pkl")
@@ -435,7 +466,28 @@ def SearchNode(state: State) -> State:
             "authors_total_chunks_dict": authors_total_chunks_dict,
             "authors_total_papers_dict": authors_total_papers_dict,
             "authors_chunks_percentage_dict": authors_chunks_percentage_dict,
-            "authors_papers_percentage_dict": authors_papers_percentage_dict}
+            "authors_papers_percentage_dict": authors_papers_percentage_dict,
+            "sources": sources}
+
+def EvaluateNode(state: State) -> State:
+    df = pd.read_pickle('folk_ntnu_embeddings.pkl')
+    sources = state.get('sources')
+    keyword_embeddings = vector_embedding_model.encode(state.get('query_description').keywords)
+
+    for source in sources:
+        top_bigrams_and_freq = get_top_bigrams(df[df['source'].isin([source])])
+        top_bigrams = [bigram for bigram, freq in top_bigrams_and_freq]
+        bigrams_embeddings = vector_embedding_model.encode(top_bigrams)
+
+        # bigrams_embeddings has shape (n_bigrams , 768)
+        # keyword_embeddings has shape (k_keywords, 768)
+
+        dot_prod = np.einsum('nj,kj->nk', bigrams_embeddings, keyword_embeddings)
+        vec_prod = np.einsum('n,k->nk',np.linalg.norm(bigrams_embeddings, axis = -1),np.linalg.norm(keyword_embeddings, axis = -1))
+        cosines = dot_prod/vec_prod
+        avg_cosine = np.mean(cosines)
+        print("average cosine is ", avg_cosine, " for source: ", source)
+    return {}
 
 """
 Routers
@@ -470,6 +522,7 @@ graph_builder.add_node("GenerateBookNode", GenerateBookNode)
 graph_builder.add_node("RetrieveAuthorNode", RetrieveAuthorNode)
 graph_builder.add_node("GenerateAuthorNode", GenerateAuthorNode)
 graph_builder.add_node("SearchNode", SearchNode)
+graph_builder.add_node("EvaluateNode", EvaluateNode)
 
 graph_builder.add_edge(START, "InformationNode")
 graph_builder.add_conditional_edges("InformationNode", RetrievalRouter, {"SearchMRSTModulesNode": "SearchMRSTModulesNode", "RetrieveNode": "RetrieveNode", "RetrieveAuthorNode": "RetrieveAuthorNode"})
@@ -477,7 +530,8 @@ graph_builder.add_conditional_edges("RetrieveNode", BookRouter, {"GenerateBookNo
 graph_builder.add_edge("SearchMRSTModulesNode", "InformationNode")
 graph_builder.add_edge("RetrieveAuthorNode", "GenerateAuthorNode")
 graph_builder.add_edge("GenerateBookNode", "SearchNode")
-graph_builder.add_edge("SearchNode", END)
+graph_builder.add_edge("SearchNode", "EvaluateNode")
+graph_builder.add_edge("EvaluateNode", END)
 graph_builder.add_edge("GenerateAuthorNode", END)
 
 graph = graph_builder.compile()
