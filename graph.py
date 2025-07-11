@@ -10,6 +10,7 @@ import networkx as nx
 import matplotlib.pyplot as plt
 from matplotlib.figure import Figure
 from tools.sintef_search_tool import web_search_mrst
+from langgraph.prebuilt import create_react_agent
 
 from dotenv import load_dotenv
 import os
@@ -17,7 +18,10 @@ load_dotenv()
 openai_api_key = os.getenv("OPENAI_API_KEY")
 langchain_openai_api_key = os.getenv("LANGCHAIN_OPENAI_API_KEY")
 
+tools = [web_search_mrst]
+
 strong_client = ChatOpenAI(model="gpt-4o-mini", temperature=0.0, openai_api_key=langchain_openai_api_key)
+tools_agent = create_react_agent(strong_client, tools)
 weak_client = ChatOpenAI(model="gpt-3.5-turbo", temperature=0.0, openai_api_key = langchain_openai_api_key)
 
 vector_embedding_model = SentenceTransformer('sentence-transformers/all-mpnet-base-v2')
@@ -48,10 +52,27 @@ class State(TypedDict):
     tools_calls: List[tuple[str, List[str]]]
     visited_link: str
     chapter_info: tuple[int, str]
+    authors_papers_dict: dict[str, int]
+    authors_chunks_dict: dict[str, int]
+    authors_total_papers_dict: dict[str, int]
+    authors_total_chunks_dict: dict[str, int]
+    authors_papers_percentage_dict: dict[str, float]
+    authors_chunks_percentage_dict: dict[str, float]
+
+class Authors(BaseModel):
+    authors: List[str] = Field(description = "List of the authors mentioned in the users query. Has to be specifically mentioned by the user!")
 
 """
 Helper functions
 """
+
+def split_by_more(string: str, chars: List[str] = []):
+    if chars == []:
+        return string.split()
+    else:
+        for method, next_method in zip(chars, chars[1:]):
+            string = next_method.join(string.split(method))
+        return string.split(chars[-1])
 
 def name_in(name: str, name_list: List[str]) -> bool:
 
@@ -171,65 +192,124 @@ Nodes
 def InformationNode(state: State) -> State:
     query = state.get("query")
 
-    query_description = state.get("query_description")
+    conventional = True # choose if normal method to call tools
 
-    if query_description == None:
+    if conventional:
 
-        prompt = [{"role": "system", "content": f"""
+        msg = [('system', f"""
         You are an assistant for the Matlab Reservoir Toolbox developed by SINTEF.
-        You are going to extract keywords, authors and a problem description from the user query.
+        You are going to extract keywords and a problem description from the user query.
         The keywords should help distinguish different SINTEF researchers MRST expertize fields,
-        so you should be very specific when generating keywords. For example, do NOT include keywords like
-        'reservoir simulation' or 'numerical simulation'.
-                   
-        You can use the tool "web_search_mrst":
-        name: {web_search_mrst.name}
-        description: {web_search_mrst.description}
+        so you should be extremely specific when generating keywords.
+                
+        For example, if the query is:
+            - Where can I learn more about chemical eor?
+        Possible keywords are (even though you should generate more):
+            - chemical eor
+            - chemical enhanced oil recovery
+            - polymer flooding
+        Illegal and bad keywords are:
+            - reservoir simulation
+            - numerical mathematics
+        and other general queries that has something to do with MRST in general, but not specifically chemical eor.
+                
+        Format the output as such:
+        {{
+            keywords: [<list_of_keywords>],
+            problem_description: <problem_description>
+        }}
+                
+        You can use the tool 'web_search_mrst' tp get content and further links from the mrst webpage.
+        Only use the tool if you're sure the link is relevant.
+        Here's a list of possible start links, if you are going to use the tool, choose the most relevant one:
 
-        to get content and further links from the mrst webpage, if you feel like that will help you generate keywords.
-        Here's a list of possible inputs, if you are going to use the tool, choose the most relevant one:
+            {web_search_mrst.invoke(input = 'https://www.sintef.no/projectweb/mrst/modules/')[1]}
 
-        {web_search_mrst.invoke(input = 'https://www.sintef.no/projectweb/mrst/modules/')[1]}
+        """),
+        ("user", query)]
 
-        """},
-        {"role": "user", "content": query}]
+        response = tools_agent.invoke({"messages": msg})
+        answer = response['messages'][-1].content
 
-        query_description = strong_client.with_structured_output(QueryDescriptionWithTools).invoke(prompt)
+        k = 'keywords: '
+        p = 'problem_description: '
 
+        keywords_index = answer.find(k)
+        problem_index = answer.find(p)
+
+        keywords_split = answer[keywords_index + len(k):problem_index]
+        problem_split = answer[problem_index + len(p):]
+
+        keywords = [i for i in split_by_more(keywords_split, ['[',']','"',',']) if i not in ["\n"," ", ""]][:-1]
+        problem_description = [i for i in split_by_more(problem_split, ['"']) if i not in ["", " "]][0]
+
+        authors = strong_client.with_structured_output(Authors).invoke([{"role": "system", "content": "You are going to extract SINTEF researchers from a users query"}, {"role": "user", "content": query}]).authors
+
+        authors = [a for a in authors if "sintef" not in a.lower()]
+
+        query_description = QueryDescriptionWithTools(keywords=keywords, problem_description=problem_description, authors=authors, tools=False, tools_input="")
         return {"query_description": query_description}
 
     else:
-        tools_calls = state.get('tools_calls')
+        query_description = state.get("query_description")
 
-        prompt = [{"role": "system", "content": f"""
-        You are an assistant for the Matlab Reservoir Toolbox developed by SINTEF.
-        You are going to extract keywords, authors and a problem description from the user query.
-        The keywords should help distinguish different SINTEF researchers MRST expertize fields,
-        so you should be very specific when generating keywords. For example, do NOT include keywords like
-        'reservoir simulation' or 'numerical simulation'.
-                   
-        You have used the tool "web_search_mrst":
-        name: {web_search_mrst.name}
-        description: {web_search_mrst.description}
+        if query_description == None:
 
-        Here is your tool call.
+            prompt = [{"role": "system", "content": f"""
+            You are an assistant for the Matlab Reservoir Toolbox developed by SINTEF.
+            You are going to extract keywords, authors and a problem description from the user query.
+            The keywords should help distinguish different SINTEF researchers MRST expertize fields,
+            so you should be very specific when generating keywords. For example, do NOT include keywords like
+            'reservoir simulation' or 'numerical simulation'.
+                    
+            You can use the tool "web_search_mrst":
+            name: {web_search_mrst.name}
+            description: {web_search_mrst.description}
 
-        tools_calls:
-        {tools_calls[0]}
+            to get content and further links from the mrst webpage, if you feel like that will help you generate keywords.
+            Here's a list of possible inputs, if you are going to use the tool, choose the most relevant one:
 
-        """},
-        {"role": "user", "content": query}]
+            {web_search_mrst.invoke(input = 'https://www.sintef.no/projectweb/mrst/modules/')[1]}
 
-        response = strong_client.with_structured_output(QueryDescription).invoke(prompt)
-        return_val = QueryDescriptionWithTools(
-            authors = query_description.authors,
-            keywords = list(set(response.keywords + query_description.keywords)),
-            problem_description = response.problem_description,
-            tools = False,
-            tools_input = ""
-            )
+            """},
+            {"role": "user", "content": query}]
 
-        return {"query_description": return_val}
+            query_description = strong_client.with_structured_output(QueryDescriptionWithTools).invoke(prompt)
+
+            return {"query_description": query_description}
+
+        else:
+            tools_calls = state.get('tools_calls')
+
+            prompt = [{"role": "system", "content": f"""
+            You are an assistant for the Matlab Reservoir Toolbox developed by SINTEF.
+            You are going to extract keywords, authors and a problem description from the user query.
+            The keywords should help distinguish different SINTEF researchers MRST expertize fields,
+            so you should be very specific when generating keywords. For example, do NOT include keywords like
+            'reservoir simulation' or 'numerical simulation'.
+                    
+            You have used the tool "web_search_mrst":
+            name: {web_search_mrst.name}
+            description: {web_search_mrst.description}
+
+            Here is your tool call.
+
+            tools_calls:
+            {tools_calls[0]}
+
+            """},
+            {"role": "user", "content": query}]
+
+            response = strong_client.with_structured_output(QueryDescription).invoke(prompt)
+            return_val = QueryDescriptionWithTools(
+                authors = query_description.authors,
+                keywords = list(set(response.keywords + query_description.keywords)),
+                problem_description = response.problem_description,
+                tools = False,
+                tools_input = ""
+                )
+
+            return {"query_description": return_val}
 
 def SearchMRSTModulesNode(state: State) -> State:
     link = state.get('query_description').tools_input
@@ -246,7 +326,7 @@ def RetrieveNode(state: State) -> State:
     cosines = dot_prod/vec_prod
     print(f"Max cosine found:  {np.max(cosines)} \n")
     df['cosine'] = np.max(cosines, axis = -1)
-    df = df[df['cosine'] >= 0.6]
+    df = df[df['cosine'] >= 0.65]
 
     return {"df": df}
 
@@ -300,7 +380,62 @@ def GenerateAuthorNode(state: State) -> State:
     return {"response": weak_client.invoke(msg).content}
 
 def SearchNode(state: State) -> State:
-    return {}
+    df = pd.read_pickle('folk_ntnu_embeddings.pkl')
+    query_description = state.get('query_description')
+    vector = vector_embedding_model.encode(query_description.keywords + [query_description.problem_description])
+    embeddings = np.array(df['embedding'].tolist())
+    dot_prod = np.einsum('ij,kj->ki', vector, embeddings)
+    vec_prod = np.einsum('i,k->ki',np.linalg.norm(vector, axis = -1),np.linalg.norm(embeddings, axis = -1))
+    cosines = dot_prod/vec_prod
+    df['cosine'] = np.max(cosines, axis = -1)
+    threshold = 0.55
+    max_cosine = np.max(cosines)
+
+    print("Threshold set to: ", threshold)
+
+    sorted_df = df[df['cosine'] > threshold]
+    print(f"Found {len(sorted_df)} chunks.")
+    sources = set(sorted_df['source'].tolist())
+    print(f"Found {len(sources)} papers.")
+
+    authors_papers_dict = {} # Total number of papers retrieved per author
+    authors_chunks_dict = {} # Total number of chunks retrieved per author
+    authors_total_papers_dict = {} # Total number of papers per retrieved author
+    authors_total_chunks_dict = {} # Total number of chunks per retrieved author
+    authors_papers_percentage_dict = {}
+    authors_chunks_percentage_dict = {}
+
+    authors = set()
+
+    for source in sources:
+        source_df = sorted_df[sorted_df['source'] == source]
+        authors_from_source = source_df['authors'].tolist()[0]
+        for a in authors_from_source:
+            authors.add(a)
+
+            cosine = source_df['cosine'].tolist()
+
+            for i in range(len(source_df)):
+                authors_chunks_dict[a] = authors_chunks_dict.get(a, 0) + 1 + 1*(cosine[i]-threshold)/(max_cosine-threshold)
+
+            authors_papers_dict[a] = authors_papers_dict.get(a, 0) + 1
+        
+    for a in authors:
+        authors_df = df[df['authors'].apply(lambda x: a in x) == True]
+        authors_total_chunks_dict[a] = len(authors_df)
+        authors_papers_df = authors_df[authors_df['chunk'] == 0]
+        authors_total_papers_dict[a] = len(authors_papers_df)
+
+    for a in authors:
+        authors_papers_percentage_dict[a] = authors_papers_dict[a]/authors_total_papers_dict[a]
+        authors_chunks_percentage_dict[a] = 0.5*authors_chunks_dict[a]/authors_total_chunks_dict[a]
+
+    return {"authors_chunks_dict": authors_chunks_dict,
+            "authors_papers_dict": authors_papers_dict,
+            "authors_total_chunks_dict": authors_total_chunks_dict,
+            "authors_total_papers_dict": authors_total_papers_dict,
+            "authors_chunks_percentage_dict": authors_chunks_percentage_dict,
+            "authors_papers_percentage_dict": authors_papers_percentage_dict}
 
 """
 Routers
