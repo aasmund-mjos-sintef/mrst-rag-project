@@ -12,7 +12,7 @@ from matplotlib.figure import Figure
 from tools.sintef_search_tool import web_search_mrst
 from langgraph.prebuilt import create_react_agent
 from collections import Counter
-# from classes.git import GitAgent
+from classes.git import GitAgent
 
 import re
 from nltk.corpus import stopwords
@@ -500,7 +500,7 @@ def EvaluateNode(state: State) -> State:
 def GitNode(state: State) -> State:
     query = state.get('query')
     code_query = state.get('code_query')
-    prompt = [{"role": "system", "content": "You are going to extract a maximum of 10 code keywords based on the provided code and problem"},{"role":"user", "content": "problem\n: " + query + "\n\ncode\n:" + code_query}]
+    prompt = [{"role": "system", "content": "You are going to extract a maximum of 10 code keywords related to the problem the user has based on the provided code and problem"},{"role":"user", "content": "problem:\n " + query + "\n\ncode:\n" + code_query}]
     coding_keywords = strong_client.with_structured_output(CodingKeyWords).invoke(prompt).keywords
     code_search = coding_keywords + [code_query]
     code_search_embeddings = np.array(code_vector_embedding_model.encode(code_search))
@@ -511,6 +511,23 @@ def GitNode(state: State) -> State:
     cosine = dot_prod/norm_prod
     df['cosine'] = np.max(cosine, axis = 0)
     sorted_df = df.sort_values(by = 'cosine', ascending = False).head(10)
+    file_paths = sorted_df['file_path'].tolist()
+    path_df = {}
+    for fp in file_paths:
+        fp_layers = fp.split('/')
+        for i in range(1,len(fp_layers)):
+            path = "/".join(fp_layers[:i])
+            path_df[path] = path_df.get(path,0) + 1
+
+    most_common_paths = sorted(list(zip(path_df.keys(), path_df.values())), key=lambda x: x[1])[::-1][:5]
+    gitAgent = GitAgent()
+    for p, n in most_common_paths:
+        email, name = gitAgent.get_commit_frequency_numbers(p)
+        print(p)
+        print(name)
+        print("."*40)
+
+
     return {"code_df": sorted_df, "coding_keywords": coding_keywords}
 
 """

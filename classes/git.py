@@ -7,7 +7,7 @@ code_embedding_model_name = 'microsoft/codebert-base'
 cloned_repo_path = "mrst_cloned"
 
 class GitAgent:
-    def __init__(self, repo_path):
+    def __init__(self, repo_path = cloned_repo_path):
         if repo_path.startswith("http"):
 
             tempfile_version = False
@@ -26,6 +26,8 @@ class GitAgent:
                     print(f"Repository already exists at {repo_path}, using existing repository.")
                     repo_path = os.path.abspath(cloned_repo_path)
                     self.repo = Repo(repo_path)
+        else:
+            self.repo = Repo(repo_path)
 
     
 
