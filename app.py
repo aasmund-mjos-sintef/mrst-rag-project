@@ -24,9 +24,10 @@ if "figures" not in st.session_state:
 
 def run_graph():
     query = st.session_state.query
+    code_query = st.session_state.code_query
     response_area.text("Generating answer...")
 
-    state = graph.invoke(State(query = query))
+    state = graph.invoke(State(query = query, code_query=code_query))
 
     st.session_state.response = state.get('response')
 
@@ -46,8 +47,17 @@ def run_graph():
 
     st.session_state.figures = images
 
-st.markdown("#### Hi, I am an assistant made by SINTEF for the Matlab Reservoir Simulation Toolbox. I can assist you by guiding you to which MRST developers you should contact based on your specific problem, and where in the MRST textbooks you might be able to get help regarding your problem. Please write down any problems you might have and press enter to run!")
-query = st.text_input("", "", key = "query", on_change=run_graph)
+st.markdown("#### Hi, I am an assistant made by SINTEF for the Matlab Reservoir Simulation Toolbox. I can assist you by guiding you to which MRST developers you should contact based on your specific problem, and where in the MRST textbooks you might be able to get help regarding your problem.")
+
+query, code_query, button = st.columns([5,5,1])
+with query:
+    st.markdown("#### Please write down any problems you might have")
+    query = st.text_area(label = "",value = "", key = "query", height = 300)
+with code_query:
+    st.markdown("#### Please write down any matlab code for context", )
+    code_query = st.text_area(label = "",value = "",key = "code_query", height = 300)
+with button:
+    st.button(label = "run", on_click=run_graph)
 response_area = st.markdown("")
 response_area.markdown(st.session_state.response)
 
