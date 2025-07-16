@@ -12,6 +12,7 @@ from matplotlib.figure import Figure
 from tools.sintef_search_tool import web_search_mrst
 from langgraph.prebuilt import create_react_agent
 from collections import Counter
+# from classes.git import GitAgent
 
 import re
 from nltk.corpus import stopwords
@@ -32,6 +33,7 @@ tools_agent = create_react_agent(strong_client, tools)
 weak_client = ChatOpenAI(model="gpt-3.5-turbo", temperature=0.0, openai_api_key = langchain_openai_api_key)
 
 vector_embedding_model = SentenceTransformer('sentence-transformers/all-mpnet-base-v2')
+code_vector_embedding_model = SentenceTransformer('microsoft/codebert-base')
 
 """
 Helper classes -- Called with client.with_structured_output(ClassName)
@@ -49,11 +51,17 @@ class QueryDescription(BaseModel):
     authors: List[str] = Field(description = "The authors mentioned in the users query")
     problem_description: str = Field(description = "The users problem compacted into one sentence")
 
+class CodingKeyWords(BaseModel):
+    keywords: List[str] = Field(description = "Key code object names or code words/functions etc based on the provided code")
+
 class State(TypedDict):
     query: str
+    code_query: str
+    coding_keywords: List[str]
     query_description : QueryDescriptionWithTools
     attempts: int
     df: pd.DataFrame
+    code_df: pd.DataFrame
     response: str
     figures: List[Figure]
     tools_calls: List[tuple[str, List[str]]]
@@ -489,6 +497,21 @@ def EvaluateNode(state: State) -> State:
         print("average cosine is ", avg_cosine, " for source: ", source)
     return {}
 
+def GitNode(state: State) -> State:
+    code_query = state.get('code_query')
+    prompt = [{"role": "system", "content": "You are going to extract code keywords based on the provided code"},{"role":"user", "content": code_query}]
+    coding_keywords = strong_client.with_structured_output(CodingKeyWords).invoke(prompt).keywords
+    code_search = coding_keywords + [code_query]
+    code_search_embeddings = np.array(vector_embedding_model.encode(code_search))
+    df = pd.read_pickle("mrst_repository_embeddings.pkl")
+    embeddings = np.array(df['embedding'].tolist())
+    dot_prod = np.einsum("ni,ki->nk", code_search_embeddings, embeddings)
+    norm_prod = np.einsum("n,k->nk", np.linalg.norm(code_search_embeddings, axis = -1), np.linalg.norm(embeddings, axis = -1))
+    cosine = dot_prod/norm_prod
+    df['cosine'] = np.max(cosine, axis = 0)
+    sorted_df = df.sort_values(by = 'cosine', ascending = False).head(10)
+    return {"code_df": sorted_df}
+
 """
 Routers
 """
@@ -523,6 +546,7 @@ graph_builder.add_node("RetrieveAuthorNode", RetrieveAuthorNode)
 graph_builder.add_node("GenerateAuthorNode", GenerateAuthorNode)
 graph_builder.add_node("SearchNode", SearchNode)
 graph_builder.add_node("EvaluateNode", EvaluateNode)
+graph_builder.add_node("GitNode", GitNode)
 
 graph_builder.add_edge(START, "InformationNode")
 graph_builder.add_conditional_edges("InformationNode", RetrievalRouter, {"SearchMRSTModulesNode": "SearchMRSTModulesNode", "RetrieveNode": "RetrieveNode", "RetrieveAuthorNode": "RetrieveAuthorNode"})
@@ -531,8 +555,9 @@ graph_builder.add_edge("SearchMRSTModulesNode", "InformationNode")
 graph_builder.add_edge("RetrieveAuthorNode", "GenerateAuthorNode")
 graph_builder.add_edge("GenerateBookNode", "SearchNode")
 graph_builder.add_edge("SearchNode", "EvaluateNode")
-graph_builder.add_edge("EvaluateNode", END)
-graph_builder.add_edge("GenerateAuthorNode", END)
+graph_builder.add_edge("EvaluateNode", "GitNode")
+graph_builder.add_edge("GenerateAuthorNode", "GitNode")
+graph_builder.add_edge("GitNode", END)
 
 graph = graph_builder.compile()
 graph.get_graph().draw_mermaid_png(output_file_path='graph_vizualization.png')
