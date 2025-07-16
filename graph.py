@@ -52,7 +52,7 @@ class QueryDescription(BaseModel):
     problem_description: str = Field(description = "The users problem compacted into one sentence")
 
 class CodingKeyWords(BaseModel):
-    keywords: List[str] = Field(description = "Key code object names or code words/functions etc based on the provided code")
+    keywords: List[str] = Field(description = "Key code object names or code words/functions etc based on the provided code.")
 
 class State(TypedDict):
     query: str
@@ -498,11 +498,12 @@ def EvaluateNode(state: State) -> State:
     return {}
 
 def GitNode(state: State) -> State:
+    query = state.get('query')
     code_query = state.get('code_query')
-    prompt = [{"role": "system", "content": "You are going to extract code keywords based on the provided code"},{"role":"user", "content": code_query}]
+    prompt = [{"role": "system", "content": "You are going to extract a maximum of 10 code keywords based on the provided code and problem"},{"role":"user", "content": "problem\n: " + query + "\n\ncode\n:" + code_query}]
     coding_keywords = strong_client.with_structured_output(CodingKeyWords).invoke(prompt).keywords
     code_search = coding_keywords + [code_query]
-    code_search_embeddings = np.array(vector_embedding_model.encode(code_search))
+    code_search_embeddings = np.array(code_vector_embedding_model.encode(code_search))
     df = pd.read_pickle("mrst_repository_embeddings.pkl")
     embeddings = np.array(df['embedding'].tolist())
     dot_prod = np.einsum("ni,ki->nk", code_search_embeddings, embeddings)
@@ -510,7 +511,7 @@ def GitNode(state: State) -> State:
     cosine = dot_prod/norm_prod
     df['cosine'] = np.max(cosine, axis = 0)
     sorted_df = df.sort_values(by = 'cosine', ascending = False).head(10)
-    return {"code_df": sorted_df}
+    return {"code_df": sorted_df, "coding_keywords": coding_keywords}
 
 """
 Routers
