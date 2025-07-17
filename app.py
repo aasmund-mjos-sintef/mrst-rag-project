@@ -28,6 +28,17 @@ if "authors" not in st.session_state:
 if "github_authors" not in st.session_state:
     st.session_state.github_authors = []
 
+st.markdown("#### Hi, I am an assistant made by SINTEF for the Matlab Reservoir Simulation Toolbox. I can assist you by guiding you to which MRST developers you should contact based on your specific problem, and where in the MRST textbooks you might be able to get help regarding your problem.")
+
+query, code_query, button = st.columns([5,5,1])
+with query:
+    st.markdown("#### Please write down any problems you might have")
+    query = st.text_area(label = "Query",value = "", key = "query", height = 300, label_visibility="hidden")
+with code_query:
+    st.markdown("#### Please write down any matlab code for context", )
+    code_query = st.text_area(label = "Code Query",value = "",key = "code_query", height = 300, label_visibility="hidden")
+
+
 from graph import *
 import io
 
@@ -42,10 +53,10 @@ def run_graph():
 
     book_response = state.get('book_response')
     if book_response != None:
+        total_response += "#### Relevant information in the MRST textbooks \n\n"
         total_response += book_response
 
     authors_relevance_score = state.get('authors_relevance_score')
-    cosine_dict = state.get('cosine_dict')
 
     if len(authors_relevance_score.keys()):
         authors = sorted(list(zip(authors_relevance_score.keys(), authors_relevance_score.values())), key = lambda x: x[1])
@@ -78,17 +89,8 @@ def run_graph():
 
     st.session_state.figures = images
 
-st.markdown("#### Hi, I am an assistant made by SINTEF for the Matlab Reservoir Simulation Toolbox. I can assist you by guiding you to which MRST developers you should contact based on your specific problem, and where in the MRST textbooks you might be able to get help regarding your problem.")
-
-query, code_query, button = st.columns([5,5,1])
-with query:
-    st.markdown("#### Please write down any problems you might have")
-    query = st.text_area(label = "",value = "", key = "query", height = 300)
-with code_query:
-    st.markdown("#### Please write down any matlab code for context", )
-    code_query = st.text_area(label = "",value = "",key = "code_query", height = 300)
 with button:
-    st.button(label = "run", on_click=run_graph)
+    st.button(label = "Generate answer", on_click=run_graph)
 
 response_area = st.markdown(st.session_state.response)
 
