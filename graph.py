@@ -12,7 +12,9 @@ from matplotlib.figure import Figure
 from tools.sintef_search_tool import web_search_mrst
 from langgraph.prebuilt import create_react_agent
 from collections import Counter
-from classes.git import GitAgent
+from classes.GitAgent import GitAgent
+import warnings
+warnings.filterwarnings('ignore')
 
 import re
 from nltk.corpus import stopwords
@@ -33,7 +35,6 @@ tools_agent = create_react_agent(strong_client, tools)
 weak_client = ChatOpenAI(model="gpt-3.5-turbo", temperature=0.0, openai_api_key = langchain_openai_api_key)
 
 vector_embedding_model = SentenceTransformer('sentence-transformers/all-mpnet-base-v2')
-code_vector_embedding_model = SentenceTransformer('microsoft/codebert-base')
 
 """
 Helper classes -- Called with client.with_structured_output(ClassName)
@@ -62,7 +63,7 @@ class State(TypedDict):
     attempts: int
     df: pd.DataFrame
     code_df: pd.DataFrame
-    response: str
+    book_response: str
     figures: List[Figure]
     tools_calls: List[tuple[str, List[str]]]
     visited_link: str
@@ -73,7 +74,10 @@ class State(TypedDict):
     authors_total_chunks_dict: dict[str, int]
     authors_papers_percentage_dict: dict[str, float]
     authors_chunks_percentage_dict: dict[str, float]
+    authors_relevance_score: dict[str, float]
+    github_authors_relevance_score: dict[str, float]
     sources: set[str]
+    cosine_dict: dict[str, tuple[float, float]]
 
 class Authors(BaseModel):
     authors: List[str] = Field(description = "List of the authors mentioned in the users query. Has to be specifically mentioned by the user!")
@@ -152,10 +156,9 @@ def get_top_bigrams(df):
 
     counter = get_bigram_freq(total_text)
     return counter.most_common(10)
-    
 
 def generate_book_graph_figure(chapter: int, book: str, sections: set[tuple[int, int, int]]):
-    book_df = pd.read_pickle("book_embeddings.pkl")
+    book_df = pd.read_pickle("datasets/book_embeddings.pkl")
     df = book_df[(book_df['file_type'].isin([book])) & (book_df['0'].isin([chapter]))]
     t = df['title'].tolist()
     s = df['sections'].tolist()
@@ -279,8 +282,8 @@ def InformationNode(state: State) -> State:
         keywords_split = answer[keywords_index + len(k):problem_index]
         problem_split = answer[problem_index + len(p):]
 
-        keywords = [i for i in split_by_more(keywords_split, ['[',']','"',',']) if i not in ["\n"," ", ""]][:-1]
-        problem_description = [i for i in split_by_more(problem_split, ['"']) if i not in ["", " "]][0]
+        keywords = [i for i in split_by_more(keywords_split, ['[',']','"',',']) if i.strip()][:-1]
+        problem_description = [i for i in split_by_more(problem_split, ['"']) if i.strip()][0]
 
         authors = strong_client.with_structured_output(Authors).invoke([{"role": "system", "content": "You are going to extract SINTEF researchers from a users query"}, {"role": "user", "content": query}]).authors
 
@@ -355,7 +358,7 @@ def SearchMRSTModulesNode(state: State) -> State:
     return {"tools_calls": [web_search_mrst.invoke(input = link)], "visited_link": link}
 
 def RetrieveNode(state: State) -> State:
-    df = pd.read_pickle('book_embeddings.pkl')
+    df = pd.read_pickle('datasets/book_embeddings.pkl')
     df = df[df['file_type'].isin(['Advanced Book'])]
     query_description = state.get('query_description')
     vector = vector_embedding_model.encode(query_description.keywords + [query_description.problem_description])
@@ -397,10 +400,10 @@ def GenerateBookNode(state: State) -> State:
             and who they should contact based on the authors of the relevant book sections.
             Do not mention the title.
             \n Context:\n {context}"""}, {"role": "user", "content": query}]
-    return {"response": weak_client.invoke(msg).content, "figures": figures, "chapter_info": list(zipped_book)}
+    return {"book_response": weak_client.invoke(msg).content, "figures": figures, "chapter_info": list(zipped_book)}
 
 def RetrieveAuthorNode(state: State) -> State:
-    df = pd.read_pickle('book_embeddings.pkl')
+    df = pd.read_pickle('datasets/book_embeddings.pkl')
     authors_names = state.get('query_description').authors
     df = df[df['authors'].apply(lambda x: bool([True for a in x if name_in(a, authors_names)]))]
     return {"df": df}
@@ -416,10 +419,10 @@ def GenerateAuthorNode(state: State) -> State:
         "answer the query seperately for each researcher. "+
         "The context given is titles of retrieved documents, and their respective authors. "+
         "\n Context:\n" + context}, {"role": "user", "content": query}]
-    return {"response": weak_client.invoke(msg).content}
+    return {"book_response": weak_client.invoke(msg).content}
 
 def SearchNode(state: State) -> State:
-    df = pd.read_pickle('folk_ntnu_embeddings.pkl')
+    df = pd.read_pickle('datasets/folk_ntnu_embeddings.pkl')
     query_description = state.get('query_description')
     vector = vector_embedding_model.encode(query_description.keywords + [query_description.problem_description])
     embeddings = np.array(df['embedding'].tolist())
@@ -469,18 +472,32 @@ def SearchNode(state: State) -> State:
         authors_papers_percentage_dict[a] = authors_papers_dict[a]/authors_total_papers_dict[a]
         authors_chunks_percentage_dict[a] = 0.5*authors_chunks_dict[a]/authors_total_chunks_dict[a]
 
+    max_papers_per_person = max(authors_total_papers_dict.values()) if authors else 0
+    max_chunks_per_person = max(authors_total_chunks_dict.values()) if authors else 0
+
+    authors_relevance_score = {}
+    gamma = 0.2
+
+    for a in authors:
+        authors_relevance_score[a] = 100*authors_chunks_percentage_dict[a]*authors_papers_percentage_dict[a]*(gamma*max_papers_per_person + authors_total_papers_dict[a])/((1+gamma)*max_papers_per_person)#*(gamma*max_chunks_per_person + authors_total_chunks_dict[a])/((1+gamma)*max_chunks_per_person)
+
     return {"authors_chunks_dict": authors_chunks_dict,
             "authors_papers_dict": authors_papers_dict,
             "authors_total_chunks_dict": authors_total_chunks_dict,
             "authors_total_papers_dict": authors_total_papers_dict,
             "authors_chunks_percentage_dict": authors_chunks_percentage_dict,
             "authors_papers_percentage_dict": authors_papers_percentage_dict,
+            "authors_relevance_score": authors_relevance_score,
             "sources": sources}
 
 def EvaluateNode(state: State) -> State:
-    df = pd.read_pickle('folk_ntnu_embeddings.pkl')
+    df = pd.read_pickle('datasets/folk_ntnu_embeddings.pkl')
     sources = state.get('sources')
-    keyword_embeddings = vector_embedding_model.encode(state.get('query_description').keywords)
+    keywords = state.get('query_description').keywords
+    keywords = keywords if len(keywords) else [state.get('query_description').problem_description]
+    keyword_embeddings = vector_embedding_model.encode(keywords)
+
+    cosine_dict = {}
 
     for source in sources:
         top_bigrams_and_freq = get_top_bigrams(df[df['source'].isin([source])])
@@ -493,18 +510,28 @@ def EvaluateNode(state: State) -> State:
         dot_prod = np.einsum('nj,kj->nk', bigrams_embeddings, keyword_embeddings)
         vec_prod = np.einsum('n,k->nk',np.linalg.norm(bigrams_embeddings, axis = -1),np.linalg.norm(keyword_embeddings, axis = -1))
         cosines = dot_prod/vec_prod
+        new_shape = (len(keywords)*len(top_bigrams),)
+        sorted_cosines = np.reshape(cosines, new_shape)
+        sorted_cosines.sort()
+        n = new_shape[0]//4
+        highest_cosines = np.zeros((n,), dtype = float)
+        for i in range(0,n):
+            highest_cosines[i] = sorted_cosines[new_shape[0]-i-1]
+
+        avg_high_cosine = np.mean(highest_cosines)
         avg_cosine = np.mean(cosines)
-        print("average cosine is ", avg_cosine, " for source: ", source)
-    return {}
+        cosine_dict[source] = (avg_cosine, avg_high_cosine)
+
+    return {"cosine_dict": cosine_dict}
 
 def GitNode(state: State) -> State:
     query = state.get('query')
     code_query = state.get('code_query')
     prompt = [{"role": "system", "content": "You are going to extract a maximum of 10 code keywords related to the problem the user has based on the provided code and problem"},{"role":"user", "content": "problem:\n " + query + "\n\ncode:\n" + code_query}]
     coding_keywords = strong_client.with_structured_output(CodingKeyWords).invoke(prompt).keywords
-    code_search = coding_keywords + [code_query]
-    code_search_embeddings = np.array(code_vector_embedding_model.encode(code_search))
-    df = pd.read_pickle("mrst_repository_embeddings.pkl")
+    code_search = coding_keywords
+    code_search_embeddings = np.array(vector_embedding_model.encode(code_search))
+    df = pd.read_pickle("datasets/mrst_repository_embeddings.pkl")
     embeddings = np.array(df['embedding'].tolist())
     dot_prod = np.einsum("ni,ki->nk", code_search_embeddings, embeddings)
     norm_prod = np.einsum("n,k->nk", np.linalg.norm(code_search_embeddings, axis = -1), np.linalg.norm(embeddings, axis = -1))
@@ -521,14 +548,13 @@ def GitNode(state: State) -> State:
 
     most_common_paths = sorted(list(zip(path_df.keys(), path_df.values())), key=lambda x: x[1])[::-1][:5]
     gitAgent = GitAgent()
+    total_freq_dict = {}
     for p, n in most_common_paths:
-        email, name = gitAgent.get_commit_frequency_numbers(p)
-        print(p)
-        print(name)
-        print("."*40)
+        _, name = gitAgent.get_commit_frequency_numbers(p)
+        for n in name.keys():
+            total_freq_dict[n] = total_freq_dict.get(n,0) + name[n]
 
-
-    return {"code_df": sorted_df, "coding_keywords": coding_keywords}
+    return {"code_df": sorted_df, "coding_keywords": coding_keywords, "github_authors_relevance_score": total_freq_dict}
 
 """
 Routers

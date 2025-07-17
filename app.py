@@ -1,7 +1,7 @@
 import streamlit as st
-from graph import *
-import io
 import streamlit.components.v1 as components
+import warnings
+warnings.filterwarnings('ignore')
 
 st.set_page_config(layout = "wide", page_title = "MRST Assistant", page_icon = "mrst_logo.png")
 
@@ -22,6 +22,15 @@ if "response" not in st.session_state:
 if "figures" not in st.session_state:
     st.session_state.figures = []
 
+if "authors" not in st.session_state:
+    st.session_state.authors = []
+
+if "github_authors" not in st.session_state:
+    st.session_state.github_authors = []
+
+from graph import *
+import io
+
 def run_graph():
     query = st.session_state.query
     code_query = st.session_state.code_query
@@ -29,7 +38,29 @@ def run_graph():
 
     state = graph.invoke(State(query = query, code_query=code_query))
 
-    st.session_state.response = state.get('response')
+    total_response = ""
+
+    book_response = state.get('book_response')
+    if book_response != None:
+        total_response += book_response
+
+    authors_relevance_score = state.get('authors_relevance_score')
+    cosine_dict = state.get('cosine_dict')
+
+    if len(authors_relevance_score.keys()):
+        authors = sorted(list(zip(authors_relevance_score.keys(), authors_relevance_score.values())), key = lambda x: x[1])
+        total_n_authors = len(authors)
+        n = min([total_n_authors, 5])
+        st.session_state.authors  = authors[total_n_authors-n:][::-1] if total_n_authors else []
+
+    github_authors_relevance_score = state.get('github_authors_relevance_score')
+    if len(github_authors_relevance_score.keys()):
+        authors = sorted(list(zip(github_authors_relevance_score.keys(), github_authors_relevance_score.values())), key = lambda x: x[1])
+        total_n_authors = len(authors)
+        n = min([total_n_authors, 5])
+        st.session_state.github_authors  = authors[total_n_authors-n:][::-1] if total_n_authors else []
+
+    st.session_state.response = total_response
 
     figures = state.get('figures')
     chapter_info = state.get('chapter_info')
@@ -58,8 +89,8 @@ with code_query:
     code_query = st.text_area(label = "",value = "",key = "code_query", height = 300)
 with button:
     st.button(label = "run", on_click=run_graph)
-response_area = st.markdown("")
-response_area.markdown(st.session_state.response)
+
+response_area = st.markdown(st.session_state.response)
 
 for c_info, img in st.session_state.figures:
     components.html("""
@@ -86,3 +117,23 @@ for c_info, img in st.session_state.figures:
 """, height = 550)
     
     st.markdown(f"Map over chapter {c_info[0]} in {c_info[1]}. A green node means that I found relevant content in that chapter. You can zoom in by scrolling.")
+
+papers, github, _ = st.columns([5,5,1])
+
+with papers:
+
+    if len(st.session_state.authors):
+        st.markdown("### Based on the retrieved MRST papers, I would recommend reaching out to: ")
+
+    for a, s in st.session_state.authors:
+        st.markdown(f'#### {a}')
+        st.markdown('With a relevance score of ' + str(s))
+
+with github:
+
+    if len(st.session_state.github_authors):
+        st.markdown("### Based on the relevant commits in the MRST github repository, I would recommend reaching out to: ")
+
+    for a, s in st.session_state.github_authors:
+        st.markdown(f'#### {a}')
+        st.markdown('With '+ str(s) + ' commits in retrieved folders')
