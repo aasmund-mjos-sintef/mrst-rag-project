@@ -31,6 +31,7 @@ langchain_openai_api_key = os.getenv("LANGCHAIN_OPENAI_API_KEY")
 tools = [web_search_mrst]
 
 strong_client = ChatOpenAI(model="gpt-4o-mini", temperature=0.0, openai_api_key=langchain_openai_api_key)
+beast_client = ChatOpenAI(model="gpt-4", temperature=0.0, openai_api_key=langchain_openai_api_key)
 tools_agent = create_react_agent(strong_client, tools)
 weak_client = ChatOpenAI(model="gpt-3.5-turbo", temperature=0.0, openai_api_key = langchain_openai_api_key)
 
@@ -78,6 +79,9 @@ class State(TypedDict):
     github_authors_relevance_score: dict[str, float]
     sources: set[str]
     cosine_dict: dict[str, tuple[float, float]]
+
+class SpecificScore(BaseModel):
+    specific_scores: List[int] = Field(description = "List of specific_score is a number from 1 to 10 defining how specific or general the keywords are related to the scientific field of reservoir simulation. 10 is extremely specific, and 1 is extremely general")
 
 class Authors(BaseModel):
     authors: List[str] = Field(description = "List of the authors mentioned in the users query. Has to be specifically mentioned by the user!")
@@ -289,6 +293,34 @@ def InformationNode(state: State) -> State:
 
         authors = [a for a in authors if "sintef" not in a.lower()]
 
+        if len(query) < 500:    # Since we use an expensive model, we only allow smaller prompts into the llm
+
+            keywords_string = ""
+            for k in keywords:
+                keywords_string += "-"+k
+                keywords_string += "\n"
+
+            n = len(keywords)
+
+            sys_msg = f"""You are going to determine how specific these keywords are related to the field of reservoir simulation in relation to the users query.
+            You are NOT going to determine the relevance to the users query, but you are going to determine how specific it is related to reservoir simulation and the query.
+            For example, keywords like 'reservoir simulation', 'numerical mathematics' should always have a low score like 1 or 2. 
+            For example, keywords like 'chemical enhanced oil recovery' should be very high if the query is 'What can you tell me about chemical eor'
+            Generate score for all keywords, so a total of {n}.
+            Query:\n{query}
+            
+            Keywords:\n {keywords_string}"""
+
+            specific_score = []
+
+            i = 0
+            while len(specific_score) != n and i<3:
+                i+=1
+                specific_score = beast_client.with_structured_output(SpecificScore).invoke([{"role": "system", "content": sys_msg}]).specific_scores
+
+            if i < 3:
+                keywords = [keywords[j] for j in range(n) if specific_score[j]>6]
+
         query_description = QueryDescriptionWithTools(keywords=keywords, problem_description=problem_description, authors=authors, tools=False, tools_input="")
         return {"query_description": query_description}
 
@@ -366,7 +398,7 @@ def RetrieveNode(state: State) -> State:
     dot_prod = np.einsum('ij,kj->ki', vector, embeddings)
     vec_prod = np.einsum('i,k->ki',np.linalg.norm(vector, axis = -1),np.linalg.norm(embeddings, axis = -1))
     cosines = dot_prod/vec_prod
-    print(f"Max cosine found:  {np.max(cosines)} \n")
+    print(f"Max cosine found:  {np.max(cosines)}")
     df['cosine'] = np.max(cosines, axis = -1)
     df = df[df['cosine'] >= 0.65]
 
@@ -553,6 +585,8 @@ def GitNode(state: State) -> State:
         _, name = gitAgent.get_commit_frequency_numbers(p)
         for n in name.keys():
             total_freq_dict[n] = total_freq_dict.get(n,0) + name[n]
+
+    print("\n")
 
     return {"code_df": sorted_df, "coding_keywords": coding_keywords, "github_authors_relevance_score": total_freq_dict}
 
