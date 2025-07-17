@@ -303,10 +303,9 @@ def InformationNode(state: State) -> State:
             n = len(keywords)
 
             sys_msg = f"""You are going to determine how specific these keywords are related to the field of reservoir simulation in relation to the users query.
-            You are NOT going to determine the relevance to the users query, but you are going to determine how specific it is related to reservoir simulation and the query.
-            For example, keywords like 'reservoir simulation', 'numerical mathematics' should always have a low score like 1 or 2. 
-            For example, keywords like 'chemical enhanced oil recovery' should be very high if the query is 'What can you tell me about chemical eor'
-            Generate score for all keywords, so a total of {n}.
+            For example, keywords like 'reservoir simulation', 'numerical mathematics' should always have a low score like 1 or 2, since they are very general. 
+            For example, a keyword like 'chemical enhanced oil recovery' should be very high if the query is 'What can you tell me about chemical eor'
+            Generate scores for all keywords, so a total of {n}.
             Query:\n{query}
             
             Keywords:\n {keywords_string}"""
