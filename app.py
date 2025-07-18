@@ -8,13 +8,13 @@ st.set_page_config(layout = "wide", page_title = "MRST Assistant", page_icon = "
 mrst_logo, _, title, _, ai_logo = st.columns([2, 3, 4, 3, 1])
 
 with mrst_logo:
-    st.image("mrst_logo.png")
+    st.image("mrst_logo.webp")
 
 with title:
     st.title("MRST Virtual assistant")
 
 with ai_logo:
-    st.image("ai_logo.png")
+    st.image("langgraph_logo.png")
 
 if "response" not in st.session_state:
     st.session_state.response = ""
@@ -30,14 +30,11 @@ if "github_authors" not in st.session_state:
 
 st.markdown("#### Hi, I am an assistant made by SINTEF for the Matlab Reservoir Simulation Toolbox. I can assist you by guiding you to which MRST developers you should contact based on your specific problem, and where in the MRST textbooks you might be able to get help regarding your problem.")
 
-query, code_query, button = st.columns([5,5,1])
+query, code_query, button = st.columns([6,6,1])
 with query:
-    st.markdown("#### Please write down any problems you might have")
-    query = st.text_area(label = "Query",value = "", key = "query", height = 300, label_visibility="hidden")
+    query = st.text_area(label = "Query",value = "", key = "query", height = 300, label_visibility="hidden", placeholder="Please write down any problems you might have")
 with code_query:
-    st.markdown("#### Please write down any matlab code for context", )
-    code_query = st.text_area(label = "Code Query",value = "",key = "code_query", height = 300, label_visibility="hidden")
-
+    code_query = st.text_area(label = "Code Query",value = "",key = "code_query", height = 300, label_visibility="hidden", placeholder="Please write down any matlab code for context")
 
 from graph import *
 import io
@@ -89,16 +86,21 @@ def run_graph():
 
     st.session_state.figures = images
 
+def no_func():
+    i = 0
+    for i in range(100000000):
+        i+=1
+    print("done")
+
 with button:
-    st.button(label = "Generate answer", on_click=run_graph)
+    st.button(label = "Generate answer ", on_click=run_graph, type = "primary")
+    st.button(label = "Test of patience", on_click=no_func)
 
 response_area = st.markdown(st.session_state.response)
 
 for c_info, img in st.session_state.figures:
     components.html("""
 <div style="
-    border: 2px solid #ccc;
-    border-radius: 8px;
     padding: 10px;
     margin-bottom: 20px;
     background-color: #ffffff;
@@ -120,7 +122,7 @@ for c_info, img in st.session_state.figures:
     
     st.markdown(f"Map over chapter {c_info[0]} in {c_info[1]}. A green node means that I found relevant content in that chapter. You can zoom in by scrolling.")
 
-papers, github, _ = st.columns([5,5,1])
+papers, github, _ = st.columns([6,6,1])
 
 with papers:
 
@@ -139,3 +141,5 @@ with github:
     for a, s in st.session_state.github_authors:
         st.markdown(f'#### {a}')
         st.markdown('With '+ str(s) + ' commits in retrieved folders')
+
+st.pills('Choose next search, generated possibilities', ["First", "Second", "Third"], selection_mode="single")
