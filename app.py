@@ -52,7 +52,7 @@ from graph import *
 import io
 
 def run_graph():
-    response_area.text("Generating answer...")
+    response_area.markdown("#### Generating answer...")
     query = st.session_state.query
     code_query = st.session_state.code_query
     auto_query = st.session_state.auto_query
