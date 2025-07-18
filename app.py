@@ -79,7 +79,7 @@ def run_graph():
         for c_info, fig in zip(chapter_info, figures):
 
             buf = io.StringIO()
-            fig.savefig(buf, format = 'svg')
+            fig.savefig(buf, format = 'svg', facecolor = "#faf9f7")
             image = buf.getvalue()
             images.append((c_info, image))
             buf.close()
@@ -103,7 +103,7 @@ for c_info, img in st.session_state.figures:
 <div style="
     padding: 10px;
     margin-bottom: 20px;
-    background-color: #ffffff;
+    background-color: #faf9f7;
     display: inline-block;
     box-sizing: border-box;
     min-height: 100px;
