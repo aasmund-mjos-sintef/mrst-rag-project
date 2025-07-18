@@ -34,6 +34,12 @@ if "authors" not in st.session_state:
 if "github_authors" not in st.session_state:
     st.session_state.github_authors = []
 
+if "suggestions" not in st.session_state:
+    st.session_state.suggestions = []
+
+if "auto_query" not in st.session_state:
+    st.session_state.auto_query = ""
+
 st.markdown("#### Hi, I am an assistant made by SINTEF for the Matlab Reservoir Simulation Toolbox. I can assist you by guiding you to which MRST developers you should contact based on your specific problem, and where in the MRST textbooks you might be able to get help regarding your problem.")
 
 query, code_query, button = st.columns([6,6,1])
@@ -46,51 +52,70 @@ from graph import *
 import io
 
 def run_graph():
+    response_area.text("Generating answer...")
     query = st.session_state.query
     code_query = st.session_state.code_query
-    response_area.text("Generating answer...")
+    auto_query = st.session_state.auto_query
+    st.session_state.auto_query = None
 
-    state = graph.invoke(State(query = query, code_query=code_query))
+    if auto_query == None:
+        auto_query = ""
 
-    total_response = ""
+    if query != "" or code_query != "" or auto_query != "":
+        if auto_query != "":
+            state = graph.invoke(State(query = "Give me a brief summary of what work " + auto_query + " does", code_query= "", query_description = QueryDescriptionWithTools(keywords = [], authors=[auto_query], problem_description="", tools=False, tools_input=""), start_node="RetrieveAuthorNode"))
+        else:
+            state = graph.invoke(State(query = query, code_query=code_query, start_node="InformationNode"))
 
-    book_response = state.get('book_response')
-    if book_response != None:
-        total_response += "#### Relevant information in the MRST textbooks \n\n"
-        total_response += book_response
+        st.session_state.suggestions = state.get('suggestions')
+        total_response = ""
 
-    authors_relevance_score = state.get('authors_relevance_score')
+        author_response = state.get('author_response')
+        if author_response != None:
+            total_response += f" \n\n#### Relevant information about {", ".join(state.get('query_description').authors)}  \n\n"
+            total_response += author_response
 
-    if len(authors_relevance_score.keys()):
-        authors = sorted(list(zip(authors_relevance_score.keys(), authors_relevance_score.values())), key = lambda x: x[1])
-        total_n_authors = len(authors)
-        n = min([total_n_authors, 5])
-        st.session_state.authors  = authors[total_n_authors-n:][::-1] if total_n_authors else []
+        book_response = state.get('book_response')
+        if book_response != None:
+            total_response += "\n\n#### Relevant information in the MRST textbooks \n\n"
+            total_response += book_response
 
-    github_authors_relevance_score = state.get('github_authors_relevance_score')
-    if len(github_authors_relevance_score.keys()):
-        authors = sorted(list(zip(github_authors_relevance_score.keys(), github_authors_relevance_score.values())), key = lambda x: x[1])
-        total_n_authors = len(authors)
-        n = min([total_n_authors, 5])
-        st.session_state.github_authors  = authors[total_n_authors-n:][::-1] if total_n_authors else []
+        authors_relevance_score = state.get('authors_relevance_score')
+        if authors_relevance_score != None: 
+            if len(authors_relevance_score.keys()):
+                authors = sorted(list(zip(authors_relevance_score.keys(), authors_relevance_score.values())), key = lambda x: x[1])
+                total_n_authors = len(authors)
+                n = min([total_n_authors, 5])
+                st.session_state.authors  = authors[total_n_authors-n:][::-1] if total_n_authors else []
+        else:
+            st.session_state.authors = []
 
-    st.session_state.response = total_response
+        github_authors_relevance_score = state.get('github_authors_relevance_score')
+        if github_authors_relevance_score != None:
+            if len(github_authors_relevance_score.keys()):
+                authors = sorted(list(zip(github_authors_relevance_score.keys(), github_authors_relevance_score.values())), key = lambda x: x[1])
+                total_n_authors = len(authors)
+                n = min([total_n_authors, 5])
+                st.session_state.github_authors  = authors[total_n_authors-n:][::-1] if total_n_authors else []
+        else:
+            st.session_state.github_authors = []
 
-    figures = state.get('figures')
-    chapter_info = state.get('chapter_info')
-    images = []
+        st.session_state.response = total_response
 
-    if figures != None:
-        print("Found ", len(figures), " chapters!")
-        for c_info, fig in zip(chapter_info, figures):
+        figures = state.get('figures')
+        chapter_info = state.get('chapter_info')
+        images = []
 
-            buf = io.StringIO()
-            fig.savefig(buf, format = 'svg', facecolor = "#faf9f7")
-            image = buf.getvalue()
-            images.append((c_info, image))
-            buf.close()
+        if figures != None:
+            for c_info, fig in zip(chapter_info, figures):
 
-    st.session_state.figures = images
+                buf = io.StringIO()
+                fig.savefig(buf, format = 'svg', facecolor = "#faf9f7")
+                image = buf.getvalue()
+                images.append((c_info, image))
+                buf.close()
+
+        st.session_state.figures = images
 
 def reset_func():
     st.session_state.query = ""
@@ -146,4 +171,6 @@ with github:
         st.markdown(f'#### {a}')
         st.markdown('With '+ str(s) + ' commits in retrieved folders')
 
-st.pills('Choose next search, generated possibilities', ["First", "Second", "Third"], selection_mode="single")
+if len(st.session_state.suggestions):
+    st.markdown('#### Click on the authors you want to learn more about these authors')
+    st.pills(label = 'Find out more about the authors', options = set(st.session_state.suggestions), default = None, selection_mode="single", label_visibility='hidden', key = 'auto_query', on_change=run_graph)

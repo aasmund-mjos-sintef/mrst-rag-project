@@ -56,35 +56,82 @@ class QueryDescription(BaseModel):
 class CodingKeyWords(BaseModel):
     keywords: List[str] = Field(description = "Key code object names or code words/functions etc based on the provided code.")
 
+class SpecificScore(BaseModel):
+    specific_scores: List[int] = Field(description = "List of specific_score is a number from 1 to 10 defining how specific or general the keywords are related to the scientific field of reservoir simulation. 10 is extremely specific, and 1 is extremely general")
+
+class Authors(BaseModel):
+    authors: List[str] = Field(description = "List of the authors mentioned in the users query. Has to be specifically mentioned by the user!")
+
+"""
+State
+"""
+
 class State(TypedDict):
+    start_node: str
     query: str
     code_query: str
     coding_keywords: List[str]
     query_description : QueryDescriptionWithTools
-    attempts: int
     df: pd.DataFrame
     code_df: pd.DataFrame
     book_response: str
+    author_response: str
+    suggestions: List[str]
     figures: List[Figure]
     tools_calls: List[tuple[str, List[str]]]
     visited_link: str
     chapter_info: tuple[int, str]
+    # These should get removed, only here for debugging puposes
     authors_papers_dict: dict[str, int]
     authors_chunks_dict: dict[str, int]
     authors_total_papers_dict: dict[str, int]
     authors_total_chunks_dict: dict[str, int]
     authors_papers_percentage_dict: dict[str, float]
     authors_chunks_percentage_dict: dict[str, float]
+    #########
     authors_relevance_score: dict[str, float]
     github_authors_relevance_score: dict[str, float]
     sources: set[str]
     cosine_dict: dict[str, tuple[float, float]]
 
-class SpecificScore(BaseModel):
-    specific_scores: List[int] = Field(description = "List of specific_score is a number from 1 to 10 defining how specific or general the keywords are related to the scientific field of reservoir simulation. 10 is extremely specific, and 1 is extremely general")
+"""
+Helper objects
+"""
 
-class Authors(BaseModel):
-    authors: List[str] = Field(description = "List of the authors mentioned in the users query. Has to be specifically mentioned by the user!")
+advanced_section_to_author = {
+    1: ["Runar L. Berge", "Øystein S. Klemetsdal", "Knut-Andreas Lie"],
+    2: ["Mohammed Al Kobaisi", "Wenjuan Zhang"],
+    3: ["Øystein S. Klemetsdal", "Knut-Andreas Lie"],
+    4: ["Knut-Andreas Lie", "Olav Møyner"],
+    5: ["Olav Møyner"],
+    6: ["Olav Møyner"],
+    7: ["Xin Sun", "Knut-Andreas Lie", "Kai Bao"],
+    8: ["Olav Møyner"],
+    9: ["Daniel Wong", "Florian Doster", "Sebastian Geiger"],
+    10: ["Olufemi Olorode", "Bin Wang", "Harun Ur Rashid"],
+    11: ["Rafael March", "Christine Maier", "Florian Doster", "Sebastian Geiger"],
+    12: ["Marine Collignon", "Øystein S. Klemetsdal", "Olav Møyner"],
+    13: ["Jhabriel Varela", "Sarah E. Gasda", "Eirik Keilegavlen", "Jan Martin"],
+    14: ["Odd Andersen"]
+}
+
+introduction_section_to_author = {
+    1: ["Knut-Andreas Lie"],
+    2: ["Knut-Andreas Lie"],
+    3: ["Knut-Andreas Lie"],
+    4: ["Knut-Andreas Lie"],
+    5: ["Knut-Andreas Lie"],
+    6: ["Knut-Andreas Lie"],
+    7: ["Knut-Andreas Lie"],
+    8: ["Knut-Andreas Lie"],
+    9: ["Knut-Andreas Lie"],
+    10: ["Knut-Andreas Lie"],
+    11: ["Knut-Andreas Lie"],
+    12: ["Knut-Andreas Lie"],
+    13: ["Knut-Andreas Lie"],
+    14: ["Knut-Andreas Lie"],
+    15: ["Knut-Andreas Lie"],
+}
 
 """
 Helper functions
@@ -295,32 +342,34 @@ def InformationNode(state: State) -> State:
 
         authors = [a for a in authors if "sintef" not in a.lower()]
 
-        # if len(query) < 500:    # Since we use an expensive model, we only allow smaller prompts into the llm
+        expensive = False
+        if expensive == True:
+            if len(query) < 500:    # Since we use an expensive model, we only allow smaller prompts into the llm
 
-        #     keywords_string = ""
-        #     for k in keywords:
-        #         keywords_string += "-"+k
-        #         keywords_string += "\n"
+                keywords_string = ""
+                for k in keywords:
+                    keywords_string += "-"+k
+                    keywords_string += "\n"
 
-        #     n = len(keywords)
+                n = len(keywords)
 
-        #     sys_msg = f"""You are going to determine how specific these keywords are related to the field of reservoir simulation in relation to the users query.
-        #     For example, keywords like 'reservoir simulation', 'numerical mathematics' should always have a low score like 1 or 2, since they are very general. 
-        #     For example, a keyword like 'chemical enhanced oil recovery' should be very high if the query is 'What can you tell me about chemical eor'
-        #     Generate scores for all keywords, so a total of {n}.
-        #     Query:\n{query}
-            
-        #     Keywords:\n {keywords_string}"""
+                sys_msg = f"""You are going to determine how specific these keywords are related to the field of reservoir simulation in relation to the users query.
+                For example, keywords like 'reservoir simulation', 'numerical mathematics' should always have a low score like 1 or 2, since they are very general. 
+                For example, a keyword like 'chemical enhanced oil recovery' should be very high if the query is 'What can you tell me about chemical eor'
+                Generate scores for all keywords, so a total of {n}.
+                Query:\n{query}
+                
+                Keywords:\n {keywords_string}"""
 
-        #     specific_score = []
+                specific_score = []
 
-        #     i = 0
-        #     while len(specific_score) != n and i<3:
-        #         i+=1
-        #         specific_score = beast_client.with_structured_output(SpecificScore).invoke([{"role": "system", "content": sys_msg}]).specific_scores
+                i = 0
+                while len(specific_score) != n and i<3:
+                    i+=1
+                    specific_score = beast_client.with_structured_output(SpecificScore).invoke([{"role": "system", "content": sys_msg}]).specific_scores
 
-        #     if i < 3:
-        #         keywords = [keywords[j] for j in range(n) if specific_score[j]>6]
+                if i < 3:
+                    keywords = [keywords[j] for j in range(n) if specific_score[j]>6]
 
         query_description = QueryDescriptionWithTools(keywords=keywords, problem_description=problem_description, authors=authors, tools=False, tools_input="")
         return {"query_description": query_description}
@@ -450,9 +499,9 @@ def GenerateAuthorNode(state: State) -> State:
     msg = [{"role": "system", "content": "You are the Generator in RAG application. "+
         "You are going to answer the users query, based on the context given. If there are multiple researchers mentioned in the users query, "+
         "answer the query seperately for each researcher. "+
-        "The context given is titles of retrieved documents, and their respective authors. "+
+        "The context given is titles of chapters in the 'Advanced Book', and their respective authors. "+
         "\n Context:\n" + context}, {"role": "user", "content": query}]
-    return {"book_response": weak_client.invoke(msg).content}
+    return {"author_response": weak_client.invoke(msg).content}
 
 def SearchNode(state: State) -> State:
     df = pd.read_pickle('datasets/folk_ntnu_embeddings.pkl')
@@ -591,9 +640,22 @@ def GitNode(state: State) -> State:
 
     return {"code_df": sorted_df, "coding_keywords": coding_keywords, "github_authors_relevance_score": total_freq_dict}
 
+def SuggestionsNode(state: State) -> State:
+    chapter_info = state.get('chapter_info')
+    suggestions = []
+    if chapter_info != None:
+        for c, b in chapter_info:
+            if b == "Advanced Book":
+                suggestions.extend(advanced_section_to_author.get(c))
+            else:
+                suggestions.extend(introduction_section_to_author.get(c))
+    return {"suggestions": suggestions}
+
 """
 Routers
 """
+def StartNodeRouter(state: State) -> Literal["InformationNode", "RetrieveAuthorNode"]:
+    return state.get('start_node')
 
 def RetrievalRouter(state: State) -> Literal["SearchMRSTModulesNode","RetrieveNode","RetrieveAuthorNode"]:
     queryDescription = state.get('query_description')
@@ -626,8 +688,9 @@ graph_builder.add_node("GenerateAuthorNode", GenerateAuthorNode)
 graph_builder.add_node("SearchNode", SearchNode)
 graph_builder.add_node("EvaluateNode", EvaluateNode)
 graph_builder.add_node("GitNode", GitNode)
+graph_builder.add_node("SuggestionsNode", SuggestionsNode)
 
-graph_builder.add_edge(START, "InformationNode")
+graph_builder.add_conditional_edges(START, StartNodeRouter, {"InformationNode": "InformationNode", "RetrieveAuthorNode": "RetrieveAuthorNode"})
 graph_builder.add_conditional_edges("InformationNode", RetrievalRouter, {"SearchMRSTModulesNode": "SearchMRSTModulesNode", "RetrieveNode": "RetrieveNode", "RetrieveAuthorNode": "RetrieveAuthorNode"})
 graph_builder.add_conditional_edges("RetrieveNode", BookRouter, {"GenerateBookNode":"GenerateBookNode", "SearchNode":"SearchNode"})
 graph_builder.add_edge("SearchMRSTModulesNode", "InformationNode")
@@ -635,8 +698,9 @@ graph_builder.add_edge("RetrieveAuthorNode", "GenerateAuthorNode")
 graph_builder.add_edge("GenerateBookNode", "SearchNode")
 graph_builder.add_edge("SearchNode", "EvaluateNode")
 graph_builder.add_edge("EvaluateNode", "GitNode")
-graph_builder.add_edge("GenerateAuthorNode", "GitNode")
-graph_builder.add_edge("GitNode", END)
+graph_builder.add_edge("GenerateAuthorNode", "SuggestionsNode")
+graph_builder.add_edge("GitNode", "SuggestionsNode")
+graph_builder.add_edge("SuggestionsNode", END)
 
 graph = graph_builder.compile()
 graph.get_graph().draw_mermaid_png(output_file_path='graph_vizualization.png')
