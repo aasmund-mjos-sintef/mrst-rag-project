@@ -16,6 +16,12 @@ with title:
 with ai_logo:
     st.image("langgraph_logo.png")
 
+if "query" not in st.session_state:
+    st.session_state.query = ""
+
+if "code_query" not in st.session_state:
+    st.session_state.code_query = ""
+
 if "response" not in st.session_state:
     st.session_state.response = ""
 
@@ -32,9 +38,9 @@ st.markdown("#### Hi, I am an assistant made by SINTEF for the Matlab Reservoir 
 
 query, code_query, button = st.columns([6,6,1])
 with query:
-    query = st.text_area(label = "Query",value = "", key = "query", height = 300, label_visibility="hidden", placeholder="Please write down any problems you might have")
+    query = st.text_area(label = "Query",value = st.session_state.query, key = "query", height = 300, label_visibility="hidden", placeholder="Please write down any problems you might have")
 with code_query:
-    code_query = st.text_area(label = "Code Query",value = "",key = "code_query", height = 300, label_visibility="hidden", placeholder="Please write down any matlab code for context")
+    code_query = st.text_area(label = "Code Query",value = st.session_state.code_query, key = "code_query", height = 300, label_visibility="hidden", placeholder="Please write down any matlab code for context")
 
 from graph import *
 import io
@@ -86,15 +92,13 @@ def run_graph():
 
     st.session_state.figures = images
 
-def no_func():
-    i = 0
-    for i in range(100000000):
-        i+=1
-    print("done")
+def reset_func():
+    st.session_state.query = ""
+    st.session_state.code_query = ""
 
 with button:
-    st.button(label = "Generate answer ", on_click=run_graph, type = "primary")
-    st.button(label = "Test of patience", on_click=no_func)
+    st.button(label = "Generate", on_click=run_graph, type = "primary")
+    st.button(label = "Reset", on_click=reset_func)
 
 response_area = st.markdown(st.session_state.response)
 
