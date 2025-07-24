@@ -9,6 +9,8 @@ import os
 load_dotenv()
 elsevier_api_key = os.getenv("ELSEVIER_API_KEY")
 
+visited = set()
+
 ###### EVERYTHING THAT IS RETURNED AS NONE IN THE TRY FETCHING DEFINITION HAS TO BE IMPLEMENTED IN A NICE WAY TO GATHER THE DATA AND CORRECT DATA FORMAT
 
 def split_by_more(string: str, chars: List[str] = []):
@@ -40,33 +42,47 @@ def get_authors(og_line):
     names = split_by_more(name_line,[",and","and",","])
     return names, title, name_line
 
-visited = set()
-
 def try_fetching_pdf(url, only_abstract):
+
+    """
+    Tries fetching pdf from url. If we see no way to get a pdf of the article from the url,
+    we return the article in dict form.
+    If return PDFREADER -> only_abstract gets handled outside of this function, returns the same no matter only_abstract
+    If not PDFREADER:
+        If only_abstract:
+            returns dict{
+            'abstract': <THE ABSTRACT>,
+            ('keywords': <[LIST OF KEYWORDS]>) -- POSSIBLY (NOT ALWAYS)
+            }
+    If could not read text, return None
+    """
 
     try:
         response = requests.get(url)
+        ctype = response.headers.get("Content-Type")
+        try:
+            if "pdf" in ctype:
+                on_fly_mem_obj = io.BytesIO(response.content)
+                return PdfReader(on_fly_mem_obj)
+        except:
+            pass
+        
         r_url = response.url
         https = "https://"
         url_snippet = r_url[len(https):]
         index = url_snippet.find('/')
         url_snippet = url_snippet[:index]
 
-        ctype = response.headers.get("Content-Type")
-        if "pdf" in ctype:
-            try:
-                on_fly_mem_obj = io.BytesIO(response.content)
-                return PdfReader(on_fly_mem_obj)
-            except:
-                pass
-
     except Exception as e:
         return None
 
     actually_try = True
-    nice_one = True
+    is_common_one = True
 
     if "linkinghub.elsevier.com" == url_snippet:
+        """
+        Works as for now only with only_abstract, but should probably get the other one to work as well
+        """
 
         if actually_try:
 
@@ -78,7 +94,7 @@ def try_fetching_pdf(url, only_abstract):
                 response = requests.get(elsevier_url, headers={"X-ELS-APIKey": elsevier_api_key})
                 soup = BeautifulSoup(response.content, 'html.parser')
                 abstract = soup.get_text().split("\n")[1].strip()
-                print(abstract)
+                return {"abstract": abstract}
 
             else:
 
@@ -88,9 +104,12 @@ def try_fetching_pdf(url, only_abstract):
                 doi = url[len(https_doi):]
                 elsevier_url = "https://api.elsevier.com/content/article/doi/" + doi + "?view=FULL"
                 response = requests.get(elsevier_url, headers={"X-ELS-APIKey": elsevier_api_key})
-                print(response.content)
+                return None
 
     elif "onepetro.org" == url_snippet:
+        """
+        Returnd dict if only_abstract, None else
+        """
 
         if actually_try:
 
@@ -119,17 +138,31 @@ def try_fetching_pdf(url, only_abstract):
                 for p in abstract_box.find_all('p'):
                     abstract += p.get_text()
                     abstract += "\n"
-                print(abstract)
 
                 driver.close()
+                return {"abstract": abstract}
 
             else:
                 pass
 
-    elif "link.springer.com	" == url_snippet:
-        pass
+    elif "link.springer.com" == url_snippet:
+        """
+        Returns dict if only_abstract, None else
+        """
+        if actually_try:
+            if only_abstract:
+
+                soup = BeautifulSoup(response.content, 'html.parser')
+                abstract_box = soup.find('div', class_ = "c-article-section")
+                return {"abstract": abstract_box.get_text()}
+        else:
+
+            pass
 
     elif "www.earthdoc.org" == url_snippet:
+        """
+        Returns dict if only_abstract, None Else
+        """
         if actually_try:
             if only_abstract:
                 headers = {
@@ -143,34 +176,34 @@ def try_fetching_pdf(url, only_abstract):
                 for p in abstract_box.find_all('p'):
                     abstract += p.get_text()
                     abstract += "\n"
-                print(abstract)
+                return {"abstract": abstract}
             else:
                 pass
-
-    elif "andreas.folk.ntnu.no" == url_snippet:
-        pass
 
     elif "www.mdpi.com" == url_snippet:
+        """
+        Always returns PDFREADER
+        """
         if actually_try:
-            if only_abstract:
-                pass
-            else:
 
-                headers = {
-                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
-                    "Accept": "text/html",
-                }
-                response = requests.get(r_url + '/pdf', headers=headers)
-                ctype = response.headers.get("Content-Type")
-                if "pdf" in ctype:
-                    on_fly_mem_obj = io.BytesIO(response.content)
-                    reader = PdfReader(on_fly_mem_obj)
-                    return reader
-                else:
-                    return None
-        pass
+            headers = {
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
+                "Accept": "text/html",
+            }
+            response = requests.get(r_url + '/pdf', headers=headers)
+            ctype = response.headers.get("Content-Type")
+            if "pdf" in ctype:
+                on_fly_mem_obj = io.BytesIO(response.content)
+                reader = PdfReader(on_fly_mem_obj)
+                return reader
+            else:
+                return None
 
     elif "agupubs.onlinelibrary.wiley.com" == url_snippet:
+
+        """
+        Always returns dict
+        """
 
         if actually_try:
             if only_abstract:
@@ -195,12 +228,12 @@ def try_fetching_pdf(url, only_abstract):
                 for p in soup.find_all('p'):
                     span = p.find('span', class_='paraNumber')
                     if span:
-                        abstract = (p.get_text())
+                        abstract = p.get_text()
                         break
-
-                print(abstract)
                         
                 driver.quit()
+                return {"abstract": abstract}
+            
             else:
                 from selenium.webdriver import Firefox
                 from selenium.webdriver.firefox.options import Options
@@ -225,14 +258,52 @@ def try_fetching_pdf(url, only_abstract):
                     if span:
                         paragraphs.append(p.get_text())
 
-                print(paragraphs)
-
                 driver.quit()
+                return {"sections": paragraphs}
 
     elif "arxiv.org" == url_snippet:
-        pass
+
+        """
+        Always returns PDFREADER
+        """
+
+        if actually_try:
+
+            pdf_link = ""
+            soup = BeautifulSoup(response.content, 'html.parser')
+            for element in soup.find_all('a', class_ = "abs-button download-pdf", href = True):
+                if "View PDF" in element.get_text():
+                    pdf_link = element.get('href')
+                    break
+
+            if pdf_link == "":
+            
+                for element in soup.find_all('a', class_ = "mobile-submission-download", href = True):
+                    if "View PDF" in element.get_text():
+                        pdf_link = element.get('href')
+                        break
+
+            if pdf_link == "":
+                return None
+            
+            else:
+                try:
+                    response = requests.get(pdf_link)
+                    ctype = response.headers.get("Content-Type")
+                    if "pdf" in ctype:
+                        on_fly_mem_obj = io.BytesIO(response.content)
+                        reader = PdfReader(on_fly_mem_obj)
+                        return reader
+                except:
+                    pass
+                return None
 
     elif "ager.yandypress.com" == url_snippet:
+
+        """
+        Returns dict{"abstract": <THE ABSTRACT>} if only_abstract
+        and PDDREADER if whole document
+        """
 
         if actually_try:
             if only_abstract:
@@ -246,7 +317,8 @@ def try_fetching_pdf(url, only_abstract):
                         abstract += "\n"
                     else:
                         break
-                print(abstract)
+
+                return {"abstract": abstract}
             else:
                 soup = BeautifulSoup(response.content, 'html.parser')
                 for element in soup.find_all(href = True):
@@ -267,10 +339,9 @@ def try_fetching_pdf(url, only_abstract):
                                     return None
 
     else:
-        nice_one = False
-        pass
+        is_common_one = False
     
-    if nice_one:
+    if is_common_one:
         if url_snippet not in visited:
             print(url_snippet, ":   ", url)
             visited.add(url_snippet)
@@ -287,6 +358,10 @@ def extract_titles_from_outline(outline):
     return result
 
 def read_pdfs(reader):
+    """
+    Returns the chapters in the pdf's outline as a list. If no outline found in the pdf document,
+    return list with one element of the whole text
+    """
 
     # THIS ONE DOESN'T RETURN ANYTHING AS OF NOW
         
@@ -297,6 +372,9 @@ def read_pdfs(reader):
     for page in reader.pages:
         page_text = " ".join(page.extract_text().lower().split())
         total_text += page_text
+
+    if not bool(outline):
+        return [total_text]
 
     indexes = []
     for i, sec in enumerate(sections):
@@ -324,6 +402,8 @@ def read_pdfs(reader):
             pass
 
         chapters.append(s)
+
+    return chapters
 
 def generate_dataset(only_abstract = False):
 
@@ -388,5 +468,5 @@ def generate_dataset(only_abstract = False):
         #     print(f"{succesfull} successfull out of {i+1}", end = "\r")
         #     time.sleep(5)
 
-try_fetching_pdf('https://doi.org/10.46690/ager.2025.03.04', only_abstract=False)
+reader = try_fetching_pdf('https://doi.org/10.1007/978-3-030-95157-3_21', only_abstract=True)
 # generate_dataset(only_abstract=True)
