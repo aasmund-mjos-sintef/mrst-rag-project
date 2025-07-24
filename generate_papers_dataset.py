@@ -3,6 +3,8 @@ from bs4 import BeautifulSoup
 from pypdf._reader import PdfReader
 import io
 from typing import List
+import pandas as pd
+from tqdm import tqdm
 
 from dotenv import load_dotenv
 import os
@@ -10,6 +12,19 @@ load_dotenv()
 elsevier_api_key = os.getenv("ELSEVIER_API_KEY")
 
 visited = set()
+
+from selenium.webdriver import Firefox
+from selenium.webdriver.firefox.options import Options
+from selenium.webdriver.firefox.service import Service
+
+firefox_path = r"/home/aasmund_mjos/firefox_mozilla/firefox"
+geckodriver_path = r"/home/aasmund_mjos/Downloads/geckodriver-v0.36.0-linux64/geckodriver"
+
+service = Service(geckodriver_path)
+options = Options()
+options.binary_location = firefox_path
+
+driver = Firefox(service = service, options=options)
 
 ###### EVERYTHING THAT IS RETURNED AS NONE IN THE TRY FETCHING DEFINITION HAS TO BE IMPLEMENTED IN A NICE WAY TO GATHER THE DATA AND CORRECT DATA FORMAT
 
@@ -54,7 +69,13 @@ def try_fetching_pdf(url, only_abstract):
             'abstract': <THE ABSTRACT>,
             ('keywords': <[LIST OF KEYWORDS]>) -- POSSIBLY (NOT ALWAYS)
             }
+        else:
+            return dict{
+            'sections': <[LIST OF SECTIONS/PARAGRAPHS/CHUNKS]>,
+            ('keywords': <[LIST OF KEYWORDS]>) -- POSSIBLY (NOT ALWAYS)
+            }
     If could not read text, return None
+    Also returns "dict" or "reader" if return is dict or reader respectively
     """
 
     try:
@@ -63,7 +84,7 @@ def try_fetching_pdf(url, only_abstract):
         try:
             if "pdf" in ctype:
                 on_fly_mem_obj = io.BytesIO(response.content)
-                return PdfReader(on_fly_mem_obj)
+                return PdfReader(on_fly_mem_obj), "reader"
         except:
             pass
         
@@ -94,7 +115,7 @@ def try_fetching_pdf(url, only_abstract):
                 response = requests.get(elsevier_url, headers={"X-ELS-APIKey": elsevier_api_key})
                 soup = BeautifulSoup(response.content, 'html.parser')
                 abstract = soup.get_text().split("\n")[1].strip()
-                return {"abstract": abstract}
+                return {"abstract": abstract}, "dict"
 
             else:
 
@@ -104,7 +125,7 @@ def try_fetching_pdf(url, only_abstract):
                 doi = url[len(https_doi):]
                 elsevier_url = "https://api.elsevier.com/content/article/doi/" + doi + "?view=FULL"
                 response = requests.get(elsevier_url, headers={"X-ELS-APIKey": elsevier_api_key})
-                return None
+                return None, None
 
     elif "onepetro.org" == url_snippet:
         """
@@ -112,6 +133,8 @@ def try_fetching_pdf(url, only_abstract):
         """
 
         if actually_try:
+
+            return None
 
             if only_abstract:
 
@@ -154,7 +177,7 @@ def try_fetching_pdf(url, only_abstract):
 
                 soup = BeautifulSoup(response.content, 'html.parser')
                 abstract_box = soup.find('div', class_ = "c-article-section")
-                return {"abstract": abstract_box.get_text()}
+                return {"abstract": abstract_box.get_text()}, "dict"
         else:
 
             pass
@@ -176,7 +199,7 @@ def try_fetching_pdf(url, only_abstract):
                 for p in abstract_box.find_all('p'):
                     abstract += p.get_text()
                     abstract += "\n"
-                return {"abstract": abstract}
+                return {"abstract": abstract}, "dict"
             else:
                 pass
 
@@ -195,9 +218,9 @@ def try_fetching_pdf(url, only_abstract):
             if "pdf" in ctype:
                 on_fly_mem_obj = io.BytesIO(response.content)
                 reader = PdfReader(on_fly_mem_obj)
-                return reader
+                return reader, "reader"
             else:
-                return None
+                return None, None
 
     elif "agupubs.onlinelibrary.wiley.com" == url_snippet:
 
@@ -207,18 +230,6 @@ def try_fetching_pdf(url, only_abstract):
 
         if actually_try:
             if only_abstract:
-                from selenium.webdriver import Firefox
-                from selenium.webdriver.firefox.options import Options
-                from selenium.webdriver.firefox.service import Service
-
-                firefox_path = r"/home/aasmund_mjos/firefox_mozilla/firefox"
-                geckodriver_path = r"/home/aasmund_mjos/Downloads/geckodriver-v0.36.0-linux64/geckodriver"
-
-                service = Service(geckodriver_path)
-                options = Options()
-                options.binary_location = firefox_path
-
-                driver = Firefox(service = service, options=options)
                 driver.get(r_url)
                 html = driver.page_source
                 soup = BeautifulSoup(html, 'html.parser')
@@ -230,23 +241,11 @@ def try_fetching_pdf(url, only_abstract):
                     if span:
                         abstract = p.get_text()
                         break
-                        
-                driver.quit()
-                return {"abstract": abstract}
+
+                return {"abstract": abstract}, "dict"
             
             else:
-                from selenium.webdriver import Firefox
-                from selenium.webdriver.firefox.options import Options
-                from selenium.webdriver.firefox.service import Service
-
-                firefox_path = r"/home/aasmund_mjos/firefox_mozilla/firefox"
-                geckodriver_path = r"/home/aasmund_mjos/Downloads/geckodriver-v0.36.0-linux64/geckodriver"
-
-                service = Service(geckodriver_path)
-                options = Options()
-                options.binary_location = firefox_path
-
-                driver = Firefox(service = service, options=options)
+                
                 driver.get(r_url)
                 html = driver.page_source
                 soup = BeautifulSoup(html, 'html.parser')
@@ -258,8 +257,7 @@ def try_fetching_pdf(url, only_abstract):
                     if span:
                         paragraphs.append(p.get_text())
 
-                driver.quit()
-                return {"sections": paragraphs}
+                return {"sections": paragraphs}, "dict"
 
     elif "arxiv.org" == url_snippet:
 
@@ -284,7 +282,7 @@ def try_fetching_pdf(url, only_abstract):
                         break
 
             if pdf_link == "":
-                return None
+                return None, None
             
             else:
                 try:
@@ -293,10 +291,10 @@ def try_fetching_pdf(url, only_abstract):
                     if "pdf" in ctype:
                         on_fly_mem_obj = io.BytesIO(response.content)
                         reader = PdfReader(on_fly_mem_obj)
-                        return reader
+                        return reader, "reader"
                 except:
                     pass
-                return None
+                return None, None
 
     elif "ager.yandypress.com" == url_snippet:
 
@@ -318,7 +316,7 @@ def try_fetching_pdf(url, only_abstract):
                     else:
                         break
 
-                return {"abstract": abstract}
+                return {"abstract": abstract}, "dict"
             else:
                 soup = BeautifulSoup(response.content, 'html.parser')
                 for element in soup.find_all(href = True):
@@ -334,9 +332,9 @@ def try_fetching_pdf(url, only_abstract):
                             if "pdf" in ctype:
                                 try:
                                     on_fly_mem_obj = io.BytesIO(response.content)
-                                    return PdfReader(on_fly_mem_obj)
+                                    return PdfReader(on_fly_mem_obj), "reader"
                                 except:
-                                    return None
+                                    return None, None
 
     else:
         is_common_one = False
@@ -346,9 +344,12 @@ def try_fetching_pdf(url, only_abstract):
             print(url_snippet, ":   ", url)
             visited.add(url_snippet)
 
-    return None
+    return None, None
     
 def extract_titles_from_outline(outline):
+    """
+    Returns a list of the section-titles in order
+    """
     result = []
     for item in outline:
         if isinstance(item, list):
@@ -357,7 +358,7 @@ def extract_titles_from_outline(outline):
             result.append(" ".join(item.title.lower().split()))
     return result
 
-def read_pdfs(reader):
+def read_pdf_whole(reader):
     """
     Returns the chapters in the pdf's outline as a list. If no outline found in the pdf document,
     return list with one element of the whole text
@@ -405,6 +406,47 @@ def read_pdfs(reader):
 
     return chapters
 
+def read_pdf_abstracts(reader):
+    outline = reader.outline
+    sections = extract_titles_from_outline(outline)
+    sec_to_start_with = ""
+    sec_to_end_with = ""
+    for sec, next_sec in zip(sections, sections[1:]):
+        if 'abstract' in sec.lower():
+            sec_to_start_with = sec
+            sec_to_end_with = next_sec
+            break
+
+    if sec_to_start_with == "":
+        if len(sections):
+            sec_to_end_with = sections[0]
+
+    abstract = ""
+    started = False
+    if sec_to_end_with != "":
+        for page in reader.pages:
+            page_text = page.extract_text().lower()
+            if started == False:
+                start_index = page_text.find('abstract')
+                if start_index != -1:
+                    started = True
+                    end_index = page_text.find(sec_to_end_with)
+                    if end_index != -1:
+                        abstract += page_text[start_index:end_index]
+                        break
+                    else:
+                        abstract += page_text[start_index:]
+            else:
+                end_index = page_text.find(sec_to_end_with)
+                if end_index != -1:
+                    abstract += page_text[:end_index]
+                    break
+                else:
+                    abstract += page_text
+
+    return abstract        
+
+
 def generate_dataset(only_abstract = False):
 
     start_links = ["https://www.sintef.no/projectweb/mrst/publications/papers-by-mrst-team/",
@@ -415,8 +457,9 @@ def generate_dataset(only_abstract = False):
                "https://www.sintef.no/projectweb/mrst/publications/phd-theses/",
                "https://www.sintef.no/projectweb/mrst/publications/master-theses/"]
 
-    links = []
     authors = {}
+
+    links = []
     titles = []
     paper_authors = []
 
@@ -452,21 +495,64 @@ def generate_dataset(only_abstract = False):
     x = len(links)
     succesfull = 0
 
-    for i, (url, a, t) in enumerate(zip(links, paper_authors, titles)):
-        print(f"Working with paper nr. {i+1} out of {x}", end = "\r")
+    titles_to_df = []
+    paper_authors_to_df = []
+    links_to_df = []
+    content_to_df = []
 
-        reader = try_fetching_pdf(url, only_abstract)
-        if reader != None:
-            print("Woho")
-            if type(reader) == type(PdfReader):
-                read_pdfs(reader)
+    for (url, paper_a, t) in tqdm(zip(links, paper_authors, titles)):
+        print(f"{succesfull} successfull :)) out of {x} papers", end = "\r")
+        succesfull += 1
+        try:
+            pdf_reader, type = try_fetching_pdf(url, only_abstract)
 
-            if type(reader) == type(dict()):
-                pass #GOTTA IMPLEMENT
+            if pdf_reader != None:
+                if type == "reader":
+                    if only_abstract:
+                        abstract = read_pdf_abstracts(pdf_reader)
+                    else:
+                        sections = read_pdf_whole(pdf_reader)
 
-        # if i%10==0:
-        #     print(f"{succesfull} successfull out of {i+1}", end = "\r")
-        #     time.sleep(5)
+                else:
 
-reader = try_fetching_pdf('https://doi.org/10.1007/978-3-030-95157-3_21', only_abstract=True)
-# generate_dataset(only_abstract=True)
+                    if only_abstract:
+                        abstract = pdf_reader.get('abstract')
+                    else:
+                        sections = pdf_reader.get('sections')
+
+                if only_abstract:
+                    titles_to_df.append(t)
+                    paper_authors_to_df.append(paper_a)
+                    links_to_df.append(url)
+                    content_to_df.append(abstract)
+
+                else:
+                    n = len(sections)
+                    many_t = [t]*n
+                    many_paper_a = [paper_a]*n
+                    many_url = [url]*n
+
+                    titles_to_df.extend(many_t)
+                    paper_authors_to_df.extend(many_paper_a)
+                    links_to_df.extend(many_url)
+                    content_to_df.extend(sections)
+            else:
+                succesfull -= 1
+        except:
+            succesfull -= 1
+
+    print("Len of links: ", len(links_to_df))
+    print("Len of titles: ", len(titles_to_df))
+    print("Len of paper authors: ", len(paper_authors_to_df))
+    print("Len of content: ", len(content_to_df))
+
+    for index, item in enumerate([titles_to_df, paper_authors_to_df, links_to_df, content_to_df]):
+        df = pd.DataFrame({"content": item})
+        df.to_pickle(f'pickle_file_nr_{index}.pkl')
+
+    df = pd.DataFrame({"content": content_to_df, "authors": paper_authors_to_df, "links": links_to_df, "titles": titles_to_df})
+    df.to_pickle('manymany.pkl')
+    print(succesfull)
+
+generate_dataset(only_abstract=True)
+driver.quit()

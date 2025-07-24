@@ -606,6 +606,77 @@ def EvaluateNode(state: State) -> State:
 
     return {"cosine_dict": cosine_dict}
 
+def SearchAndEvaluateNodeAbstracts(state: State) -> State:
+    df = pd.read_pickle('datasets/mrst_abstracts_embedding.pkl')
+    query_description = state.get('query_description')
+
+    keywords = query_description.keywords
+    keywords = keywords if len(keywords) else [query_description.problem_description]
+    keyword_embeddings = vector_embedding_model.encode(keywords)
+
+    vector = vector_embedding_model.encode(query_description.keywords + [query_description.problem_description])
+
+    embeddings = np.array(df['embedding'].tolist())
+    dot_prod = np.einsum('ij,kj->ki', vector, embeddings)
+    vec_prod = np.einsum('i,k->ki',np.linalg.norm(vector, axis = -1),np.linalg.norm(embeddings, axis = -1))
+    cosines = dot_prod/vec_prod
+    df['cosine'] = np.max(cosines, axis = -1)
+    threshold = 0.55
+
+    print("Threshold set to: ", threshold)
+
+    sorted_df = df[df['cosine'] > threshold]
+    print(f"Found {len(sorted_df)} papers.")
+
+    n_bigrams = 5
+    n_relevant = len(sorted_df)
+
+    top_bigrams = [[tup[0] for tup in get_bigram_freq(x).most_common(n_bigrams)] for x in sorted_df['content'].tolist()]
+    top_bigrams_embedded = np.array([vector_embedding_model.encode(x) for x in top_bigrams])
+
+    dot_prod = np.einsum('xnj,kj->xnk', top_bigrams_embedded, keyword_embeddings)
+    vec_prod = np.einsum('xn,k->xnk',np.linalg.norm(top_bigrams_embedded, axis = -1),np.linalg.norm(keyword_embeddings, axis = -1))
+    cosines = dot_prod/vec_prod
+    new_shape = (n_relevant, n_bigrams*len(keywords))
+    sorted_cosines = np.reshape(cosines, new_shape)
+    sorted_cosines.sort(axis = -1)
+    n = new_shape[1]//4
+    highest_cosines = np.zeros((n_relevant, n), dtype = float)
+    for i in range(0,n):
+        highest_cosines[:,i] = sorted_cosines[:,new_shape[0]-i-1]
+
+    avg_high_cosine = np.mean(highest_cosines, axis = -1)
+    sorted_df['avg_high_cosine'] = avg_high_cosine
+
+    authors_abstract_score  = {}
+    authors_n_rel_abstracts = {}
+    authors_total_n_papers  = {}
+    authors_relevance_score = {}
+
+    authors_set = set()
+
+    for authors in df['authors'].tolist():
+        for a in authors:
+            authors_total_n_papers[a] = authors_total_n_papers.get(a, 0) + 1
+
+    for authors, score in zip(sorted_df['authors'], sorted_df['avg_high_cosine']):
+        for a in authors:
+            authors_set.add(a)
+            authors_abstract_score[a] = authors_abstract_score.get(a, 0) + score
+            authors_n_rel_abstracts[a] = authors_n_rel_abstracts.get(a, 0) + 1
+    
+    max_n_papers = 0
+    for a in authors_set:
+        if authors_total_n_papers[a] > max_n_papers:
+            max_n_papers = authors_total_n_papers[a]
+
+    gamma = 0
+
+    for a in authors_set:
+        authors_relevance_score[a] = 100*authors_abstract_score[a]/authors_total_n_papers[a]*(gamma*max_n_papers + authors_total_n_papers[a])/((1+gamma)*max_n_papers)
+
+    return {"authors_relevance_score": authors_relevance_score}
+
 def GitNode(state: State) -> State:
     query = state.get('query')
     code_query = state.get('code_query')
@@ -667,11 +738,18 @@ def RetrievalRouter(state: State) -> Literal["SearchMRSTModulesNode","RetrieveNo
     else:
         return "RetrieveNode"
 
-def BookRouter(state: State) -> Literal["GenerateBookNode", "SearchNode"]:
+def SearchRouter(state: State) -> Literal["SearchNode", "SearchAndEvaluateNodeAbstracts"]:
+    only_abstracts = True
+    if only_abstracts == True:
+        return "SearchAndEvaluateNodeAbstracts"
+    else:
+        return "SearchNode"
+
+def BookRouter(state: State) -> Literal["GenerateBookNode", "SearchNode", "SearchAndEvaluateNodeAbstracts"]:
     if len(state.get('df')):
         return "GenerateBookNode"
     else:
-        return "SearchNode"
+        return SearchRouter(state)
 
 """
 Setting up the graph
@@ -686,18 +764,20 @@ graph_builder.add_node("GenerateBookNode", GenerateBookNode)
 graph_builder.add_node("RetrieveAuthorNode", RetrieveAuthorNode)
 graph_builder.add_node("GenerateAuthorNode", GenerateAuthorNode)
 graph_builder.add_node("SearchNode", SearchNode)
+graph_builder.add_node("SearchAndEvaluateNodeAbstracts", SearchAndEvaluateNodeAbstracts)
 graph_builder.add_node("EvaluateNode", EvaluateNode)
 graph_builder.add_node("GitNode", GitNode)
 graph_builder.add_node("SuggestionsNode", SuggestionsNode)
 
 graph_builder.add_conditional_edges(START, StartNodeRouter, {"InformationNode": "InformationNode", "RetrieveAuthorNode": "RetrieveAuthorNode"})
 graph_builder.add_conditional_edges("InformationNode", RetrievalRouter, {"SearchMRSTModulesNode": "SearchMRSTModulesNode", "RetrieveNode": "RetrieveNode", "RetrieveAuthorNode": "RetrieveAuthorNode"})
-graph_builder.add_conditional_edges("RetrieveNode", BookRouter, {"GenerateBookNode":"GenerateBookNode", "SearchNode":"SearchNode"})
+graph_builder.add_conditional_edges("RetrieveNode", BookRouter, {"GenerateBookNode":"GenerateBookNode", "SearchNode":"SearchNode", "SearchAndEvaluateNodeAbstracts":"SearchAndEvaluateNodeAbstracts"})
+graph_builder.add_conditional_edges("GenerateBookNode", SearchRouter, {"SearchNode":"SearchNode", "SearchAndEvaluateNodeAbstracts":"SearchAndEvaluateNodeAbstracts"})
 graph_builder.add_edge("SearchMRSTModulesNode", "InformationNode")
 graph_builder.add_edge("RetrieveAuthorNode", "GenerateAuthorNode")
-graph_builder.add_edge("GenerateBookNode", "SearchNode")
 graph_builder.add_edge("SearchNode", "EvaluateNode")
 graph_builder.add_edge("EvaluateNode", "GitNode")
+graph_builder.add_edge("SearchAndEvaluateNodeAbstracts", "GitNode")
 graph_builder.add_edge("GenerateAuthorNode", "SuggestionsNode")
 graph_builder.add_edge("GitNode", "SuggestionsNode")
 graph_builder.add_edge("SuggestionsNode", END)
