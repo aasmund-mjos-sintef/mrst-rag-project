@@ -13,8 +13,6 @@ from tools.sintef_search_tool import web_search_mrst
 from langgraph.prebuilt import create_react_agent
 from collections import Counter
 from classes.GitAgent import GitAgent
-import warnings
-warnings.filterwarnings('ignore')
 
 import re
 from nltk.corpus import stopwords
@@ -72,26 +70,18 @@ class State(TypedDict):
     code_query: str
     coding_keywords: List[str]
     query_description : QueryDescriptionWithTools
-    df: pd.DataFrame
+    book_df: pd.DataFrame
     code_df: pd.DataFrame
+    relevant_papers_df: pd.DataFrame
     book_response: str
     author_response: str
     suggestions: List[str]
     figures: List[Figure]
     tools_calls: List[tuple[str, List[str]]]
     visited_link: str
-    chapter_info: tuple[int, str]
-    # These should get removed, only here for debugging puposes
-    authors_papers_dict: dict[str, int]
-    authors_chunks_dict: dict[str, int]
-    authors_total_papers_dict: dict[str, int]
-    authors_total_chunks_dict: dict[str, int]
-    authors_papers_percentage_dict: dict[str, float]
-    authors_chunks_percentage_dict: dict[str, float]
-    #########
+    chapter_info: tuple[int, str, List[str]]
     authors_relevance_score: dict[str, float]
     github_authors_relevance_score: dict[str, float]
-    sources: set[str]
     cosine_dict: dict[str, tuple[float, float]]
 
 """
@@ -153,10 +143,10 @@ def name_in(name: str, name_list: List[str]) -> bool:
     
     "Second, check if first name and last name is equal -> If so, regarded as equal"
     for name_2 in name_list:
-        name_split = name.split()
-        name_2_split = name_2.split()
+        name_split = split_by_more(name, ["-","."," "])
+        name_2_split = split_by_more(name_2, ["-","."," "])
         if len(name_split)>=2 and len(name_2_split)>=2:
-            if name_split[0] == name_2_split[0] and name_split[-1] == name_2_split[-1]:
+            if name_split[0][0] == name_2_split[0][0] and name_split[-1] == name_2_split[-1]:
                 return True
     return False
 
@@ -303,10 +293,6 @@ def InformationNode(state: State) -> State:
             - chemical eor
             - chemical enhanced oil recovery
             - polymer flooding
-        Illegal and bad keywords are:
-            - reservoir simulation
-            - numerical mathematics
-        and other general queries that has something to do with MRST in general, but not specifically chemical eor.
                 
         Format the output as such:
         {{
@@ -338,11 +324,11 @@ def InformationNode(state: State) -> State:
         keywords = [i for i in split_by_more(keywords_split, ['[',']','"',',']) if i.strip()][:-1]
         problem_description = [i for i in split_by_more(problem_split, ['"']) if i.strip()][0]
 
-        authors = strong_client.with_structured_output(Authors).invoke([{"role": "system", "content": "You are going to extract SINTEF researchers from a users query"}, {"role": "user", "content": query}]).authors
+        authors = strong_client.with_structured_output(Authors).invoke([{"role": "system", "content": "You are going to extract specific SINTEF researchers from a users query"}, {"role": "user", "content": query}]).authors
 
         authors = [a for a in authors if "sintef" not in a.lower()]
 
-        expensive = False
+        expensive = True
         if expensive == True:
             if len(query) < 500:    # Since we use an expensive model, we only allow smaller prompts into the llm
 
@@ -450,13 +436,13 @@ def RetrieveNode(state: State) -> State:
     cosines = dot_prod/vec_prod
     print(f"Max cosine found:  {np.max(cosines)}")
     df['cosine'] = np.max(cosines, axis = -1)
-    df = df[df['cosine'] >= 0.65]
+    book_df = df[df['cosine'] >= 0.65]
 
-    return {"df": df}
+    return {"book_df": book_df}
 
 def GenerateBookNode(state: State) -> State:
     query = state.get('query')
-    df = state.get("df")
+    df = state.get("book_df")
 
     content = df['content'].tolist()
     authors = df['authors'].tolist()
@@ -469,9 +455,15 @@ def GenerateBookNode(state: State) -> State:
     zipped_book = set(zip(chapters, book))
     s = set(zip(chapters, first, second))
 
+    chapter_info = []
     figures = []
 
     for c, b in zipped_book:
+        if b == "Advanced Book":
+            rel_authors = advanced_section_to_author.get(c)
+        else:
+            rel_authors = introduction_section_to_author.get(c)
+        chapter_info.append((c,b,rel_authors))
         figures.append(generate_book_graph_figure(c, b, sections=s))
 
     df = df.sort_values(by = 'cosine', ascending=False).head(5)
@@ -482,28 +474,100 @@ def GenerateBookNode(state: State) -> State:
             and who they should contact based on the authors of the relevant book sections.
             Do not mention the title.
             \n Context:\n {context}"""}, {"role": "user", "content": query}]
-    return {"book_response": weak_client.invoke(msg).content, "figures": figures, "chapter_info": list(zipped_book)}
+    return {"book_response": weak_client.invoke(msg).content, "figures": figures, "chapter_info": chapter_info}
 
 def RetrieveAuthorNode(state: State) -> State:
     df = pd.read_pickle('datasets/book_embeddings.pkl')
     authors_names = state.get('query_description').authors
-    df = df[df['authors'].apply(lambda x: bool([True for a in x if name_in(a, authors_names)]))]
-    return {"df": df}
+    book_df = df[df['authors'].apply(lambda x: bool([True for a in x if name_in(a, authors_names)]))]
+
+    df = pd.read_pickle('datasets/mrst_abstracts_embedding.pkl')
+    relevant_papers_df = df[df['authors'].apply(lambda x: bool([True for a in x if name_in(a, authors_names)]))]
+
+    return {"book_df": book_df, "relevant_papers_df": relevant_papers_df}
 
 def GenerateAuthorNode(state: State) -> State:
-    df = state.get("df")
+    df = state.get("book_df")
     query = state.get("query")
-    titles = df['title'].tolist()
-    authors = [", ".join(a) for a in df['authors']]
-    context = "\n\n".join([" title: " + i+"\n Authors: "+j for i,j in zip(titles, authors)])
-    msg = [{"role": "system", "content": "You are the Generator in RAG application. "+
-        "You are going to answer the users query, based on the context given. If there are multiple researchers mentioned in the users query, "+
-        "answer the query seperately for each researcher. "+
-        "The context given is titles of chapters in the 'Advanced Book', and their respective authors. "+
-        "\n Context:\n" + context}, {"role": "user", "content": query}]
-    return {"author_response": weak_client.invoke(msg).content}
 
-def SearchNode(state: State) -> State:
+    author_response = ""
+    figures = None
+    chapter_info = None
+
+    if len(df) > 0:
+
+        authors = df['authors'].tolist()
+        book = df['file_type'].tolist()
+        chapters = df['0'].tolist()
+        first = df['1'].tolist()
+        second = df['2'].tolist()
+        sec = df['sections']
+        zipped_book = set(zip(chapters, book))
+        s = set(zip(chapters, first, second))
+
+        figures = []
+        chapter_info = []
+
+        for c, b in zipped_book:
+            if b == "Advanced Book":
+                rel_authors = advanced_section_to_author.get(c)
+            else:
+                rel_authors = introduction_section_to_author.get(c)
+
+            chapter_info.append((c,b,rel_authors))
+            figures.append(generate_book_graph_figure(c, b, sections=s))
+
+        titles = df['title'].tolist()
+        authors = [", ".join(a) for a in df['authors']]
+        context = "\n\n".join([" title: " + k.strip() + " " + i+"\n Authors: "+j for i,j,k in zip(titles, authors, sec)])
+        msg = [{"role": "system", "content": "You are the Generator in RAG application. "+
+            "You are going to answer the users query, based on the context given. If there are multiple researchers mentioned in the users query, "+
+            "answer the query seperately for each researcher."+
+            "The context given is titles of chapters in the 'Advanced Book', and their respective authors. "+
+            "\n Context:\n" + context}, {"role": "user", "content": query}]
+        
+        author_response += "#### MRST Books \n\n"
+        author_response += weak_client.invoke(msg).content
+        author_response += "\n\n"
+
+    df = state.get("relevant_papers_df")
+
+    if len(df) > 5:
+        titles = df['titles'].tolist()
+        authors = [", ".join(a) for a in df['authors']]
+        context = "\n\n".join([" title: " + i+"\n Authors: "+j for i,j in zip(titles, authors)])
+        msg = [{"role": "system", "content": "You are the Generator in RAG application. "+
+            "You are going to answer the users query, based on the context given. If there are multiple researchers mentioned in the users query, "+
+            "answer the query seperately for each researcher. "+
+            "The context given is titles of scientific articles, and their respective authors. "+
+            "\n Context:\n" + context}, {"role": "user", "content": query}]
+        
+        author_response += "#### MRST Papers \n\n"
+        author_response += weak_client.invoke(msg).content
+        author_response += "\n\n"
+    
+    elif len(df) > 0:
+        titles = df['titles'].tolist()
+        authors = [", ".join(a) for a in df['authors']]
+        abstracts = df['content'].tolist()
+        context = "\n\n".join([" title: " + i+"\n Authors: "+j + "\n Abstract: "+k for i,j,k in zip(titles, authors, abstracts)])
+        msg = [{"role": "system", "content": "You are the Generator in RAG application. "+
+            "You are going to answer the users query, based on the context given. If there are multiple researchers mentioned in the users query, "+
+            "answer the query seperately for each researcher. "+
+            "The context given is titles of scientific articles, their respective authors and the abstracts. "+
+            "\n Context:\n" + context}, {"role": "user", "content": query}]
+        
+        author_response += "#### MRST Papers \n\n"
+        author_response += weak_client.invoke(msg).content
+        author_response += "\n\n"
+
+    if author_response == "":
+        author_response = "Sorry, but I couldn't find any relevant information"
+
+    else:
+        return {"author_response": author_response, "figures": figures, "chapter_info": chapter_info}
+
+def SearchAndEvaluateNode(state: State) -> State:
     df = pd.read_pickle('datasets/folk_ntnu_embeddings.pkl')
     query_description = state.get('query_description')
     vector = vector_embedding_model.encode(query_description.keywords + [query_description.problem_description])
@@ -515,96 +579,86 @@ def SearchNode(state: State) -> State:
     threshold = 0.55
     max_cosine = np.max(cosines)
 
-    print("Threshold set to: ", threshold)
-
     sorted_df = df[df['cosine'] > threshold]
-    print(f"Found {len(sorted_df)} chunks.")
-    sources = set(sorted_df['source'].tolist())
-    print(f"Found {len(sources)} papers.")
 
-    authors_papers_dict = {} # Total number of papers retrieved per author
-    authors_chunks_dict = {} # Total number of chunks retrieved per author
-    authors_total_papers_dict = {} # Total number of papers per retrieved author
-    authors_total_chunks_dict = {} # Total number of chunks per retrieved author
-    authors_papers_percentage_dict = {}
-    authors_chunks_percentage_dict = {}
+    if len(sorted_df) > 0:
+        print(f"Found {len(sorted_df)} chunks.")
+        sources = set(sorted_df['source'].tolist())
+        print(f"Found {len(sources)} papers.")
 
-    authors = set()
+        authors_papers_dict = {} # Total number of papers retrieved per author
+        authors_chunks_dict = {} # Total number of chunks retrieved per author
+        authors_total_papers_dict = {} # Total number of papers per retrieved author
+        authors_total_chunks_dict = {} # Total number of chunks per retrieved author
+        authors_papers_percentage_dict = {}
+        authors_chunks_percentage_dict = {}
 
-    for source in sources:
-        source_df = sorted_df[sorted_df['source'] == source]
-        authors_from_source = source_df['authors'].tolist()[0]
-        for a in authors_from_source:
-            authors.add(a)
+        authors = set()
 
-            cosine = source_df['cosine'].tolist()
+        for source in sources:
+            source_df = sorted_df[sorted_df['source'] == source]
+            authors_from_source = source_df['authors'].tolist()[0]
+            for a in authors_from_source:
+                authors.add(a)
 
-            for i in range(len(source_df)):
-                authors_chunks_dict[a] = authors_chunks_dict.get(a, 0) + 1 + 1*(cosine[i]-threshold)/(max_cosine-threshold)
+                cosine = source_df['cosine'].tolist()
 
-            authors_papers_dict[a] = authors_papers_dict.get(a, 0) + 1
-        
-    for a in authors:
-        authors_df = df[df['authors'].apply(lambda x: a in x) == True]
-        authors_total_chunks_dict[a] = len(authors_df)
-        authors_papers_df = authors_df[authors_df['chunk'] == 0]
-        authors_total_papers_dict[a] = len(authors_papers_df)
+                for i in range(len(source_df)):
+                    authors_chunks_dict[a] = authors_chunks_dict.get(a, 0) + 1 + 1*(cosine[i]-threshold)/(max_cosine-threshold)
 
-    for a in authors:
-        authors_papers_percentage_dict[a] = authors_papers_dict[a]/authors_total_papers_dict[a]
-        authors_chunks_percentage_dict[a] = 0.5*authors_chunks_dict[a]/authors_total_chunks_dict[a]
+                authors_papers_dict[a] = authors_papers_dict.get(a, 0) + 1
+            
+        for a in authors:
+            authors_df = df[df['authors'].apply(lambda x: a in x) == True]
+            authors_total_chunks_dict[a] = len(authors_df)
+            authors_papers_df = authors_df[authors_df['chunk'] == 0]
+            authors_total_papers_dict[a] = len(authors_papers_df)
 
-    max_papers_per_person = max(authors_total_papers_dict.values()) if authors else 0
-    max_chunks_per_person = max(authors_total_chunks_dict.values()) if authors else 0
+        for a in authors:
+            authors_papers_percentage_dict[a] = authors_papers_dict[a]/authors_total_papers_dict[a]
+            authors_chunks_percentage_dict[a] = 0.5*authors_chunks_dict[a]/authors_total_chunks_dict[a]
 
-    authors_relevance_score = {}
-    gamma = 0.2
+        max_papers_per_person = max(authors_total_papers_dict.values()) if authors else 0
 
-    for a in authors:
-        authors_relevance_score[a] = 100*authors_chunks_percentage_dict[a]*authors_papers_percentage_dict[a]*(gamma*max_papers_per_person + authors_total_papers_dict[a])/((1+gamma)*max_papers_per_person)#*(gamma*max_chunks_per_person + authors_total_chunks_dict[a])/((1+gamma)*max_chunks_per_person)
+        authors_relevance_score = {}
+        gamma = 0.2
 
-    return {"authors_chunks_dict": authors_chunks_dict,
-            "authors_papers_dict": authors_papers_dict,
-            "authors_total_chunks_dict": authors_total_chunks_dict,
-            "authors_total_papers_dict": authors_total_papers_dict,
-            "authors_chunks_percentage_dict": authors_chunks_percentage_dict,
-            "authors_papers_percentage_dict": authors_papers_percentage_dict,
-            "authors_relevance_score": authors_relevance_score,
-            "sources": sources}
+        for a in authors:
+            authors_relevance_score[a] = 100*authors_chunks_percentage_dict[a]*authors_papers_percentage_dict[a]*(gamma*max_papers_per_person + authors_total_papers_dict[a])/((1+gamma)*max_papers_per_person)#*(gamma*max_chunks_per_person + authors_total_chunks_dict[a])/((1+gamma)*max_chunks_per_person)
 
-def EvaluateNode(state: State) -> State:
-    df = pd.read_pickle('datasets/folk_ntnu_embeddings.pkl')
-    sources = state.get('sources')
-    keywords = state.get('query_description').keywords
-    keywords = keywords if len(keywords) else [state.get('query_description').problem_description]
-    keyword_embeddings = vector_embedding_model.encode(keywords)
+        keywords = state.get('query_description').keywords
+        keywords = keywords if len(keywords) else [state.get('query_description').problem_description]
+        keyword_embeddings = vector_embedding_model.encode(keywords)
 
-    cosine_dict = {}
+        cosine_dict = {}
 
-    for source in sources:
-        top_bigrams_and_freq = get_top_bigrams(df[df['source'].isin([source])])
-        top_bigrams = [bigram for bigram, freq in top_bigrams_and_freq]
-        bigrams_embeddings = vector_embedding_model.encode(top_bigrams)
+        for source in sources:
+            top_bigrams_and_freq = get_top_bigrams(df[df['source'].isin([source])])
+            top_bigrams = [bigram for bigram, freq in top_bigrams_and_freq]
+            bigrams_embeddings = vector_embedding_model.encode(top_bigrams)
 
-        # bigrams_embeddings has shape (n_bigrams , 768)
-        # keyword_embeddings has shape (k_keywords, 768)
+            # bigrams_embeddings has shape (n_bigrams , 768)
+            # keyword_embeddings has shape (k_keywords, 768)
 
-        dot_prod = np.einsum('nj,kj->nk', bigrams_embeddings, keyword_embeddings)
-        vec_prod = np.einsum('n,k->nk',np.linalg.norm(bigrams_embeddings, axis = -1),np.linalg.norm(keyword_embeddings, axis = -1))
-        cosines = dot_prod/vec_prod
-        new_shape = (len(keywords)*len(top_bigrams),)
-        sorted_cosines = np.reshape(cosines, new_shape)
-        sorted_cosines.sort()
-        n = new_shape[0]//4
-        highest_cosines = np.zeros((n,), dtype = float)
-        for i in range(0,n):
-            highest_cosines[i] = sorted_cosines[new_shape[0]-i-1]
+            dot_prod = np.einsum('nj,kj->nk', bigrams_embeddings, keyword_embeddings)
+            vec_prod = np.einsum('n,k->nk',np.linalg.norm(bigrams_embeddings, axis = -1),np.linalg.norm(keyword_embeddings, axis = -1))
+            cosines = dot_prod/vec_prod
+            new_shape = (len(keywords)*len(top_bigrams),)
+            sorted_cosines = np.reshape(cosines, new_shape)
+            sorted_cosines.sort()
+            n = new_shape[0]//4
+            highest_cosines = np.zeros((n,), dtype = float)
+            for i in range(0,n):
+                highest_cosines[i] = sorted_cosines[new_shape[0]-i-1]
 
-        avg_high_cosine = np.mean(highest_cosines)
-        avg_cosine = np.mean(cosines)
-        cosine_dict[source] = (avg_cosine, avg_high_cosine)
+            avg_high_cosine = np.mean(highest_cosines)
+            avg_cosine = np.mean(cosines)
+            cosine_dict[source] = (avg_cosine, avg_high_cosine)
 
-    return {"cosine_dict": cosine_dict}
+        return {"cosine_dict": cosine_dict,
+                "authors_relevance_score": authors_relevance_score}
+    else:
+        return{}
 
 def SearchAndEvaluateNodeAbstracts(state: State) -> State:
     df = pd.read_pickle('datasets/mrst_abstracts_embedding.pkl')
@@ -621,61 +675,59 @@ def SearchAndEvaluateNodeAbstracts(state: State) -> State:
     vec_prod = np.einsum('i,k->ki',np.linalg.norm(vector, axis = -1),np.linalg.norm(embeddings, axis = -1))
     cosines = dot_prod/vec_prod
     df['cosine'] = np.max(cosines, axis = -1)
-    threshold = 0.55
+    threshold = min([0.5, np.max(cosines)-0.2])
 
     print("Threshold set to: ", threshold)
 
     sorted_df = df[df['cosine'] > threshold]
-    print(f"Found {len(sorted_df)} papers.")
 
-    n_bigrams = 5
-    n_relevant = len(sorted_df)
+    if len(sorted_df) > 0:
 
-    top_bigrams = [[tup[0] for tup in get_bigram_freq(x).most_common(n_bigrams)] for x in sorted_df['content'].tolist()]
-    top_bigrams_embedded = np.array([vector_embedding_model.encode(x) for x in top_bigrams])
+        print(f"Found {len(sorted_df)} papers.")
 
-    dot_prod = np.einsum('xnj,kj->xnk', top_bigrams_embedded, keyword_embeddings)
-    vec_prod = np.einsum('xn,k->xnk',np.linalg.norm(top_bigrams_embedded, axis = -1),np.linalg.norm(keyword_embeddings, axis = -1))
-    cosines = dot_prod/vec_prod
-    new_shape = (n_relevant, n_bigrams*len(keywords))
-    sorted_cosines = np.reshape(cosines, new_shape)
-    sorted_cosines.sort(axis = -1)
-    n = new_shape[1]//4
-    highest_cosines = np.zeros((n_relevant, n), dtype = float)
-    for i in range(0,n):
-        highest_cosines[:,i] = sorted_cosines[:,new_shape[0]-i-1]
+        n_bigrams = 5
 
-    avg_high_cosine = np.mean(highest_cosines, axis = -1)
-    sorted_df['avg_high_cosine'] = avg_high_cosine
+        top_bigrams = [[tup[0] for tup in get_bigram_freq(x).most_common(n_bigrams)] for x in sorted_df['content'].tolist()]
 
-    authors_abstract_score  = {}
-    authors_n_rel_abstracts = {}
-    authors_total_n_papers  = {}
-    authors_relevance_score = {}
+        top_bigrams_embedded = np.array([vector_embedding_model.encode(x) for x in top_bigrams])
 
-    authors_set = set()
+        dot_prod = np.einsum('xnj,kj->xnk', top_bigrams_embedded, keyword_embeddings)
+        vec_prod = np.einsum('xn,k->xnk',np.linalg.norm(top_bigrams_embedded, axis = -1),np.linalg.norm(keyword_embeddings, axis = -1))
+        cosines = dot_prod/vec_prod
 
-    for authors in df['authors'].tolist():
-        for a in authors:
-            authors_total_n_papers[a] = authors_total_n_papers.get(a, 0) + 1
+        sorted_df['avg_high_cosine'] = np.mean(np.max(cosines, axis = -1), axis = -1)
 
-    for authors, score in zip(sorted_df['authors'], sorted_df['avg_high_cosine']):
-        for a in authors:
-            authors_set.add(a)
-            authors_abstract_score[a] = authors_abstract_score.get(a, 0) + score
-            authors_n_rel_abstracts[a] = authors_n_rel_abstracts.get(a, 0) + 1
-    
-    max_n_papers = 0
-    for a in authors_set:
-        if authors_total_n_papers[a] > max_n_papers:
-            max_n_papers = authors_total_n_papers[a]
+        authors_abstract_score  = {}
+        authors_n_rel_abstracts = {}
+        authors_total_n_papers  = {}
+        authors_relevance_score = {}
 
-    gamma = 0
+        authors_set = set()
 
-    for a in authors_set:
-        authors_relevance_score[a] = 100*authors_abstract_score[a]/authors_total_n_papers[a]*(gamma*max_n_papers + authors_total_n_papers[a])/((1+gamma)*max_n_papers)
+        for authors in df['authors'].tolist():
+            for a in authors:
+                authors_total_n_papers[a] = authors_total_n_papers.get(a, 0) + 1
 
-    return {"authors_relevance_score": authors_relevance_score}
+        for authors, score in zip(sorted_df['authors'], sorted_df['avg_high_cosine']):
+            for a in authors:
+                authors_set.add(a)
+                authors_abstract_score[a] = authors_abstract_score.get(a, 0) + (1+score)**2-1
+                authors_n_rel_abstracts[a] = authors_n_rel_abstracts.get(a, 0) + 1
+        
+        max_n_papers = 0
+        for a in authors_set:
+            if authors_total_n_papers[a] > max_n_papers:
+                max_n_papers = authors_total_n_papers[a]
+
+        gamma = 0.2
+
+        for a in authors_set:
+            authors_relevance_score[a] = 100*authors_abstract_score[a]/(authors_total_n_papers[a]*max_n_papers)**gamma
+
+        return {"authors_relevance_score": authors_relevance_score, "relevant_papers_df": sorted_df}
+
+    else:
+        return {}
 
 def GitNode(state: State) -> State:
     query = state.get('query')
@@ -713,13 +765,22 @@ def GitNode(state: State) -> State:
 
 def SuggestionsNode(state: State) -> State:
     chapter_info = state.get('chapter_info')
-    suggestions = []
+    suggestions = set()
     if chapter_info != None:
-        for c, b in chapter_info:
-            if b == "Advanced Book":
-                suggestions.extend(advanced_section_to_author.get(c))
-            else:
-                suggestions.extend(introduction_section_to_author.get(c))
+        for _,_,rel_authors in chapter_info:
+            for a in rel_authors:
+                name_split = split_by_more(a, ["-","."," "])
+                suggestions.add(name_split[0][0]+"."+name_split[-1])
+
+    relevance_score = state.get('authors_relevance_score', None)
+    if relevance_score != None:
+        authors = sorted(list(zip(relevance_score.keys(), relevance_score.values())), key = lambda x: x[1])
+        total_n_authors = len(authors)
+        n = min([total_n_authors, 5])
+        suggested_authors = authors[total_n_authors-n:]
+        for a, s in suggested_authors:
+            suggestions.add(a)
+
     return {"suggestions": suggestions}
 
 """
@@ -738,15 +799,15 @@ def RetrievalRouter(state: State) -> Literal["SearchMRSTModulesNode","RetrieveNo
     else:
         return "RetrieveNode"
 
-def SearchRouter(state: State) -> Literal["SearchNode", "SearchAndEvaluateNodeAbstracts"]:
+def SearchRouter(state: State) -> Literal["SearchAndEvaluateNode", "SearchAndEvaluateNodeAbstracts"]:
     only_abstracts = True
     if only_abstracts == True:
         return "SearchAndEvaluateNodeAbstracts"
     else:
-        return "SearchNode"
+        return "SearchAndEvaluateNode"
 
-def BookRouter(state: State) -> Literal["GenerateBookNode", "SearchNode", "SearchAndEvaluateNodeAbstracts"]:
-    if len(state.get('df')):
+def BookRouter(state: State) -> Literal["GenerateBookNode", "SearchAndEvaluateNode", "SearchAndEvaluateNodeAbstracts"]:
+    if len(state.get('book_df')):
         return "GenerateBookNode"
     else:
         return SearchRouter(state)
@@ -761,23 +822,21 @@ graph_builder.add_node("InformationNode", InformationNode)
 graph_builder.add_node("SearchMRSTModulesNode", SearchMRSTModulesNode)
 graph_builder.add_node("RetrieveNode", RetrieveNode)
 graph_builder.add_node("GenerateBookNode", GenerateBookNode)
+graph_builder.add_node("SearchAndEvaluateNode", SearchAndEvaluateNode)
+graph_builder.add_node("SearchAndEvaluateNodeAbstracts", SearchAndEvaluateNodeAbstracts)
 graph_builder.add_node("RetrieveAuthorNode", RetrieveAuthorNode)
 graph_builder.add_node("GenerateAuthorNode", GenerateAuthorNode)
-graph_builder.add_node("SearchNode", SearchNode)
-graph_builder.add_node("SearchAndEvaluateNodeAbstracts", SearchAndEvaluateNodeAbstracts)
-graph_builder.add_node("EvaluateNode", EvaluateNode)
 graph_builder.add_node("GitNode", GitNode)
 graph_builder.add_node("SuggestionsNode", SuggestionsNode)
 
 graph_builder.add_conditional_edges(START, StartNodeRouter, {"InformationNode": "InformationNode", "RetrieveAuthorNode": "RetrieveAuthorNode"})
 graph_builder.add_conditional_edges("InformationNode", RetrievalRouter, {"SearchMRSTModulesNode": "SearchMRSTModulesNode", "RetrieveNode": "RetrieveNode", "RetrieveAuthorNode": "RetrieveAuthorNode"})
-graph_builder.add_conditional_edges("RetrieveNode", BookRouter, {"GenerateBookNode":"GenerateBookNode", "SearchNode":"SearchNode", "SearchAndEvaluateNodeAbstracts":"SearchAndEvaluateNodeAbstracts"})
-graph_builder.add_conditional_edges("GenerateBookNode", SearchRouter, {"SearchNode":"SearchNode", "SearchAndEvaluateNodeAbstracts":"SearchAndEvaluateNodeAbstracts"})
+graph_builder.add_conditional_edges("RetrieveNode", BookRouter, {"GenerateBookNode":"GenerateBookNode", "SearchAndEvaluateNode":"SearchAndEvaluateNode", "SearchAndEvaluateNodeAbstracts":"SearchAndEvaluateNodeAbstracts"})
+graph_builder.add_conditional_edges("GenerateBookNode", SearchRouter, {"SearchAndEvaluateNode":"SearchAndEvaluateNode", "SearchAndEvaluateNodeAbstracts":"SearchAndEvaluateNodeAbstracts"})
 graph_builder.add_edge("SearchMRSTModulesNode", "InformationNode")
-graph_builder.add_edge("RetrieveAuthorNode", "GenerateAuthorNode")
-graph_builder.add_edge("SearchNode", "EvaluateNode")
-graph_builder.add_edge("EvaluateNode", "GitNode")
+graph_builder.add_edge("SearchAndEvaluateNode", "GitNode")
 graph_builder.add_edge("SearchAndEvaluateNodeAbstracts", "GitNode")
+graph_builder.add_edge("RetrieveAuthorNode", "GenerateAuthorNode")
 graph_builder.add_edge("GenerateAuthorNode", "SuggestionsNode")
 graph_builder.add_edge("GitNode", "SuggestionsNode")
 graph_builder.add_edge("SuggestionsNode", END)

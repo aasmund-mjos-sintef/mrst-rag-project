@@ -72,12 +72,12 @@ def run_graph():
 
         author_response = state.get('author_response')
         if author_response != None:
-            total_response += f" \n\n#### Relevant information about {", ".join(state.get('query_description').authors)}  \n\n"
+            total_response += f" \n\n### Relevant information about {", ".join(state.get('query_description').authors)}  \n\n"
             total_response += author_response
 
         book_response = state.get('book_response')
         if book_response != None:
-            total_response += "\n\n#### Relevant information in the MRST textbooks \n\n"
+            total_response += "\n\n### Relevant information in the MRST textbooks \n\n"
             total_response += book_response
 
         authors_relevance_score = state.get('authors_relevance_score')
@@ -127,6 +127,9 @@ with button:
 
 response_area = st.markdown(st.session_state.response)
 
+if bool(st.session_state.figures):
+    st.markdown("### Relevant Textbook Chapters")
+
 for c_info, img in st.session_state.figures:
     components.html("""
 <div style="
@@ -149,7 +152,7 @@ for c_info, img in st.session_state.figures:
 </div>
 """, height = 550)
     
-    st.markdown(f"Map over chapter {c_info[0]} in {c_info[1]}. A green node means that I found relevant content in that chapter. You can zoom in by scrolling.")
+    st.markdown(f"Map over chapter {c_info[0]} in {c_info[1]} by {", ".join(c_info[2])}. A green node means that I found relevant content in that chapter. You can zoom in by scrolling.")
 
 papers, github, _ = st.columns([6,6,1])
 
@@ -172,5 +175,5 @@ with github:
         st.markdown('With '+ str(s) + ' commits in retrieved folders')
 
 if len(st.session_state.suggestions):
-    st.markdown('#### Click on the authors you want to learn more about these authors')
-    st.pills(label = 'Find out more about the authors', options = set(st.session_state.suggestions), default = None, selection_mode="single", label_visibility='hidden', key = 'auto_query', on_change=run_graph)
+    st.markdown('#### If you want to learn more about one of the authors, click on them')
+    st.pills(label = 'Find out more about the authors', options = st.session_state.suggestions, default = None, selection_mode="single", label_visibility='hidden', key = 'auto_query', on_change=run_graph)
