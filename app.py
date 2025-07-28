@@ -5,7 +5,7 @@ warnings.filterwarnings('ignore')
 
 st.set_page_config(layout = "wide", page_title = "MRST Assistant", page_icon = "mrst_logo.png")
 
-mrst_logo, _, title, _, ai_logo = st.columns([2, 3, 4, 3, 1])
+mrst_logo, _, title, _, sintef_logo = st.columns([2, 3, 4, 3, 2])
 
 with mrst_logo:
     st.image("mrst_logo.webp")
@@ -13,8 +13,8 @@ with mrst_logo:
 with title:
     st.title("MRST Virtual assistant")
 
-with ai_logo:
-    st.image("langgraph_logo.png")
+with sintef_logo:
+    st.image("sintef_logo.png")
 
 if "query" not in st.session_state:
     st.session_state.query = ""
