@@ -13,6 +13,9 @@ from tools.sintef_search_tool import web_search_mrst
 from langgraph.prebuilt import create_react_agent
 from collections import Counter
 from classes.GitAgent import GitAgent
+import hdbscan
+import umap
+
 
 import re
 from nltk.corpus import stopwords
@@ -60,6 +63,10 @@ class SpecificScore(BaseModel):
 class Authors(BaseModel):
     authors: List[str] = Field(description = "List of the authors mentioned in the users query. Has to be specifically mentioned by the user!")
 
+class ClusterDescription(BaseModel):
+    name: List[str] = Field(description = "List of the cluster names")
+    description: List[str] = Field(description = "List of the cluster descriptions")
+
 """
 State
 """
@@ -77,16 +84,31 @@ class State(TypedDict):
     author_response: str
     suggestions: List[str]
     figures: List[Figure]
+    c_fig: Figure
+    c_name: List[tuple[int,str]]
     tools_calls: List[tuple[str, List[str]]]
     visited_link: str
     chapter_info: tuple[int, str, List[str]]
     authors_relevance_score: dict[str, float]
     github_authors_relevance_score: dict[str, float]
     cosine_dict: dict[str, tuple[float, float]]
+    clustering: bool
 
 """
 Helper objects
 """
+
+cluster_to_color ={
+-1:"#000000",
+0:"#FF0000",
+1:"#0000FF",
+2:"#008000",
+3:"#800080",
+4:"#FFC0CB",
+5:"#FFA500",
+6:"#FFFF00",
+7:"#808080"
+}
 
 advanced_section_to_author = {
     1: ["Runar L. Berge", "Øystein S. Klemetsdal", "Knut-Andreas Lie"],
@@ -177,17 +199,13 @@ def font_size(n):
         return 3
     
 def get_bigram_freq(text):
-    # Remove punctuation and convert to lowercase
-    words = re.findall(r'\w+', text.lower()) 
 
-    # Remove stop words and words with less than 3 characters
+    words = re.findall(r'\w+', text.lower()) 
     words = [word for word in words if word not in stop_words and len(word) > 2]
 
-    # Create list of bigrams
-    bigrams = zip(words, words[1:]) # pair each word (words) with the next word (words[1:])
-    bigram_list = [' '.join(bigram) for bigram in bigrams] # join the words in the bigram with a space
+    bigrams = zip(words, words[1:])
+    bigram_list = [' '.join(bigram) for bigram in bigrams]
 
-    # Count the frequency of each bigram
     return Counter(bigram_list)
 
 def get_top_bigrams(df):
@@ -269,6 +287,69 @@ def generate_book_graph_figure(chapter: int, book: str, sections: set[tuple[int,
     ax.set_axis_off()
     return fig
 
+def umap_reduce(filtered_df):
+    """
+    Given a DataFrame, creates a manifold on the 768-dim vectors using the UMAP algorithm to reduce them to 50 dimensions.
+    It assumes the DataFrame has been cosine filtered so the manifold only learns the topology of the relevant vectors,
+    because a manifold created on the entire dataset does not learn the intricacies of the queried subtopic as well.
+
+    It returns None if the number of vectors is too low to create a manifold.
+    Else, it returns the DataFrame with the new column 'embedding_umap' containing the 50-dim vectors.
+    """
+
+    try:
+        umap_reducer = umap.UMAP(n_neighbors=10, min_dist=0, n_components=50, random_state=42)
+        umap_embeddings = umap_reducer.fit_transform(filtered_df['embedding'].tolist())
+        filtered_df['embedding_umap'] = list(umap_embeddings)
+        return filtered_df
+    except Exception as e:
+        print(f"Error when reducing to 50 dim: {e}")
+        return pd.DataFrame()
+
+def hdbscan_cluster(reduced_df):
+    """
+    Given a DataFrame with 50-dim vectors, clusters the vectors using the HDBSCAN algorithm.
+    It returns the DataFrame with a new column 'cluster' containing the assigned cluster for each row.
+    """
+
+    if reduced_df.empty:
+        return reduced_df
+
+    if len(reduced_df) < 20:
+        min_cluster_size = 2
+    else:
+        min_cluster_size = int(len(reduced_df) / 20)+1
+
+    embeddings = reduced_df['embedding_umap'].tolist()
+    clusterer = hdbscan.HDBSCAN(min_cluster_size=min_cluster_size,
+                                    min_samples=5,
+                                    cluster_selection_epsilon=0.5,
+                                    metric='euclidean', 
+                                    cluster_selection_method='eom', 
+                                    allow_single_cluster=False,
+                                    gen_min_span_tree=True,
+                                    )
+    
+    cluster_labels = clusterer.fit_predict(embeddings)
+    reduced_df['cluster'] = cluster_labels
+
+    return reduced_df
+
+def cluster_names(clustered_df):
+    different_clusters = set(clustered_df['cluster'].tolist())
+    top_words = []
+    for c in different_clusters:
+        c_df = clustered_df[clustered_df['cluster'] == c]
+        top_words.append(",".join([bigram for bigram, counter in get_top_bigrams(c_df)]))
+    n = len(different_clusters)
+    msg = [{"role": "system", "content": f"""
+            You are going to create a name and a 1 sentence long cluster description for each of the scientific article clusters
+            identified by the following top bigrams, so a total of {n}. Your mission is to create names and descriptions that help highlight the differences between the clusters.
+            
+            -{"\n\n-".join(top_words)}"""}]
+    name = weak_client.with_structured_output(ClusterDescription).invoke(msg).name
+    return [(c,n) for c, n in zip(different_clusters, name)]
+
 
 """
 Nodes
@@ -328,7 +409,7 @@ def InformationNode(state: State) -> State:
 
         authors = [a for a in authors if "sintef" not in a.lower()]
 
-        expensive = True
+        expensive = False
         if expensive == True:
             if len(query) < 500:    # Since we use an expensive model, we only allow smaller prompts into the llm
 
@@ -434,7 +515,6 @@ def RetrieveNode(state: State) -> State:
     dot_prod = np.einsum('ij,kj->ki', vector, embeddings)
     vec_prod = np.einsum('i,k->ki',np.linalg.norm(vector, axis = -1),np.linalg.norm(embeddings, axis = -1))
     cosines = dot_prod/vec_prod
-    print(f"Max cosine found:  {np.max(cosines)}")
     df['cosine'] = np.max(cosines, axis = -1)
     book_df = df[df['cosine'] >= 0.65]
 
@@ -723,8 +803,36 @@ def SearchAndEvaluateNodeAbstracts(state: State) -> State:
 
         for a in authors_set:
             authors_relevance_score[a] = 100*authors_abstract_score[a]/(authors_total_n_papers[a]*max_n_papers)**gamma
+        
+        print("Done evaluating")
+        c_fig = None
+        c_name = None
+        if state.get('clustering'):
 
-        return {"authors_relevance_score": authors_relevance_score, "relevant_papers_df": sorted_df}
+            print("Clustering")
+            clustered_df = hdbscan_cluster(umap_reduce(sorted_df))
+
+            if not clustered_df.empty:
+                print("Successfully Clustered")
+                embeddings_768 = clustered_df['embedding'].tolist()
+
+                fig, ax = plt.subplots(figsize=(3, 3))
+                fig.set_facecolor('#faf9f7')
+                ax.set_facecolor('#faf9f7')
+                clusters = clustered_df['cluster'].tolist()
+
+                for_visual_umap_reducer = umap.UMAP(n_neighbors=15, min_dist=0.1,  metric='euclidean', n_components=2, random_state=42)
+                umap_embeddings = for_visual_umap_reducer.fit_transform(embeddings_768)
+                x_umap = [embd[0] for embd in umap_embeddings]
+                y_umap = [embd[1] for embd in umap_embeddings]
+                ax.scatter(x_umap, y_umap, c=[cluster_to_color.get(x) for x in clusters])
+                ax.set_axis_off()
+                c_fig = fig
+                c_name = cluster_names(clustered_df)
+            else:
+                print("Couldn't Cluster")
+
+        return {"authors_relevance_score": authors_relevance_score, "relevant_papers_df": sorted_df, "c_fig": c_fig, "c_name": c_name}
 
     else:
         return {}

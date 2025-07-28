@@ -5,13 +5,13 @@ warnings.filterwarnings('ignore')
 
 st.set_page_config(layout = "wide", page_title = "MRST Assistant", page_icon = "mrst_logo.png")
 
-mrst_logo, _, title, _, sintef_logo = st.columns([2, 3, 4, 3, 2])
+mrst_logo, _, title, _, sintef_logo = st.columns([2, 4, 5, 4, 2])
 
 with mrst_logo:
     st.image("mrst_logo.webp")
 
 with title:
-    st.title("MRST Virtual assistant")
+    st.markdown("# MRST Virtual assistant")
 
 with sintef_logo:
     st.image("sintef_logo.png")
@@ -40,6 +40,12 @@ if "suggestions" not in st.session_state:
 if "auto_query" not in st.session_state:
     st.session_state.auto_query = ""
 
+if "c_fig" not in st.session_state:
+    st.session_state.c_fig = ""
+
+if "c_name" not in st.session_state:
+    st.session_state.c_name = []
+
 st.markdown("#### Hi, I am an assistant made by SINTEF for the Matlab Reservoir Simulation Toolbox. I can assist you by guiding you to which MRST developers you should contact based on your specific problem, and where in the MRST textbooks you might be able to get help regarding your problem.")
 
 query, code_query, button = st.columns([6,6,1])
@@ -51,10 +57,10 @@ with code_query:
 from graph import *
 import io
 
-def run_graph():
+def run_graph(query = None):
     response_area.markdown("#### Generating answer...")
-    query = st.session_state.query
-    code_query = st.session_state.code_query
+    code_query = st.session_state.code_query if query == None else ""
+    query = st.session_state.query if query == None else query
     auto_query = st.session_state.auto_query
     st.session_state.auto_query = None
 
@@ -63,9 +69,9 @@ def run_graph():
 
     if query != "" or code_query != "" or auto_query != "":
         if auto_query != "":
-            state = graph.invoke(State(query = "Give me a brief summary of what work " + auto_query + " does", code_query= "", query_description = QueryDescriptionWithTools(keywords = [], authors=[auto_query], problem_description="", tools=False, tools_input=""), start_node="RetrieveAuthorNode"))
+            state = graph.invoke(State(query = "Give me a brief summary of what work " + auto_query + " does", code_query= "", query_description = QueryDescriptionWithTools(keywords = [], authors=[auto_query], problem_description="", tools=False, tools_input=""), start_node="RetrieveAuthorNode", clustering=st.session_state.clustering))
         else:
-            state = graph.invoke(State(query = query, code_query=code_query, start_node="InformationNode"))
+            state = graph.invoke(State(query = query, code_query=code_query, start_node="InformationNode", clustering=st.session_state.clustering))
 
         st.session_state.suggestions = state.get('suggestions')
         total_response = ""
@@ -117,6 +123,17 @@ def run_graph():
 
         st.session_state.figures = images
 
+        c_fig = state.get('c_fig')
+        if c_fig != None:
+            buf = io.StringIO()
+            c_fig.savefig(buf, format = 'svg', facecolor = "#faf9f7")
+            image = buf.getvalue()
+            st.session_state.c_fig = image
+            st.session_state.c_name = state.get('c_name')
+            buf.close()
+        else:
+            st.session_state.c_fig = ""
+
 def reset_func():
     st.session_state.query = ""
     st.session_state.code_query = ""
@@ -124,6 +141,7 @@ def reset_func():
 with button:
     st.button(label = "Generate", on_click=run_graph, type = "primary")
     st.button(label = "Reset", on_click=reset_func)
+    st.checkbox(label = "Cluster", key = "clustering", value=True)
 
 response_area = st.markdown(st.session_state.response)
 
@@ -153,6 +171,41 @@ for c_info, img in st.session_state.figures:
 """, height = 550)
     
     st.markdown(f"Map over chapter {c_info[0]} in {c_info[1]} by {", ".join(c_info[2])}. A green node means that I found relevant content in that chapter. You can zoom in by scrolling.")
+
+if bool(st.session_state.c_fig):
+
+    fig_box, select_box = st.columns([2,6])
+
+    with fig_box:
+
+        components.html("""
+    <div style="
+        padding: 10px;
+        margin-bottom: 20px;
+        background-color: #faf9f7;
+        display: inline-block;
+        box-sizing: border-box;
+        min-height: 100px;
+    ">
+        <div id="svg-container" style="width: auto; height: auto; overflow: auto;">
+            """ + st.session_state.c_fig + """
+        </div>
+        <script src="https://unpkg.com/@panzoom/panzoom/dist/panzoom.min.js"></script>
+        <script>
+            var elem = document.getElementById('svg-container');
+            var panzoom = Panzoom(elem, { maxScale: 5, minScale: 1});
+            elem.addEventListener('wheel', panzoom.zoomWithWheel);
+        </script>
+    </div>
+    """, width = 300, height = 300)
+        
+    with select_box:
+        for cluster, name in st.session_state.c_name:
+            color, text = st.columns([1,5])
+            with color:
+                st.markdown(f'<div style="width: 20px; height: 20px; background-color: {cluster_to_color.get(cluster, "#2B2929")}; border-radius: 50%;"></div>', unsafe_allow_html=True)
+            with text:
+                st.button(label = name, key = name, on_click=run_graph, args = [name], type = "secondary", use_container_width=True)
 
 papers, github, _ = st.columns([6,6,1])
 
