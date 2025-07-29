@@ -67,6 +67,9 @@ class ClusterDescription(BaseModel):
     name: List[str] = Field(description = "List of the cluster names")
     description: List[str] = Field(description = "List of the cluster descriptions")
 
+class QuerySuggestions(BaseModel):
+    suggestions: List[str] = Field(description = "List of possible suggestions for further queries")
+
 """
 State
 """
@@ -83,14 +86,17 @@ class State(TypedDict):
     book_response: str
     author_response: str
     paper_response: str
-    suggestions: List[str]
+    suggestions: set
+    query_suggestions: set
     figures: List[Figure]
     c_fig: Figure
-    c_name: List[tuple[int,str]]
+    c_name: List[tuple[int, str, str]]
     tools_calls: List[tuple[str, List[str]]]
     visited_link: str
     chapter_info: tuple[int, str, List[str]]
+    book_relevance_score: dict[str, float]
     authors_relevance_score: dict[str, float]
+    relevance_score: dict[str, float]
     github_authors_relevance_score: dict[str, float]
     cosine_dict: dict[str, tuple[float, float]]
     clustering: bool
@@ -353,7 +359,7 @@ def cluster_names(clustered_df):
     cluster_description = weak_client.with_structured_output(ClusterDescription).invoke(msg)
     name = cluster_description.name
     description = cluster_description.description
-    return zip(different_clusters, name, description)
+    return list(zip(different_clusters, name, description))
 
 def get_paper_response_if_not_cluster(query, df):
     context = "\n + ""\n\n".join([f" title: {t}\n authors: {", ".join(a)}\n content: {c}" for t,a,c in zip(df['titles'], df['authors'], df['content'])])
@@ -464,7 +470,15 @@ def RetrieveNode(state: State) -> State:
     df['cosine'] = np.max(cosines, axis = -1)
     book_df = df[df['cosine'] >= 0.65]
 
-    return {"book_df": book_df}
+    book_relevance_score = {}
+
+    for authors in book_df['authors']:
+        for a in authors:
+            a_split = split_by_more(a, ['-','.',' '])
+            a_formatted = a_split[0][0] + "." + a_split[-1]
+            book_relevance_score[a_formatted] = book_relevance_score.get(a_formatted,0) + 5
+
+    return {"book_df": book_df, "book_relevance_score": book_relevance_score}
 
 def GenerateBookNode(state: State) -> State:
     query = state.get('query')
@@ -841,9 +855,50 @@ def SuggestionsNode(state: State) -> State:
         for a, s in suggested_authors:
             suggestions.add(a)
 
-    print("\n")
+    total_context = "\n"
+    total_context += state.get('paper_response', '')+"\n\n" if state.get('paper_response') else ""
+    total_context += state.get('author_response', '')+"\n\n" if state.get('author_response') else ""
+    total_context += state.get('book_response', '')+"\n\n" if state.get('book_response') else ""
+    total_context += f'{"\n".join([f'{n}: {d}' for c, n, d in state.get('c_name', '')])}'+"\n\n" if state.get('c_name') else ""
+    
+    msg = [{"role": "system", "content": f"""You are a next query suggestion maker tool in the Matlab Reservoir Simulation Toolbox competence query developed by SINTEF.
+            The users query has been used to generate answers, which is the context provided.
+            Based only on the provided context and the users query, generate a list of short suggestions for further queries.
+            The queries should be shorter than 10 words, and not include any authors or sections, only specific topics of reservoir simulation.
+            Context: {total_context}"""}, {"role": "user", "content": state.get('query')}]
+    
+    query_suggestions = set(weak_client.with_structured_output(QuerySuggestions).invoke(msg).suggestions)
 
-    return {"suggestions": suggestions}
+    kappa = 0.7
+
+    relevance_score = {}
+    a_r = state.get('authors_relevance_score', {})
+    b_r = state.get('book_relevance_score', {})
+    
+    if a_r and b_r:
+
+        m_a = max(a_r.values())
+        m_b = max(b_r.values())
+        weight_b = kappa*m_a/m_b
+        weight_a = 1
+
+        for author in a_r.keys():
+            relevance_score[author] = relevance_score.get(author, 0) + weight_a * a_r.get(author, 0)
+        
+        for author in b_r.keys():
+            relevance_score[author] = relevance_score.get(author, 0) + weight_b * b_r.get(author, 0)
+        
+    elif a_r:
+        for author in a_r.keys():
+            relevance_score[author] = relevance_score.get(author, 0) + a_r.get(author, 0)
+
+    elif b_r:
+        for author in b_r.keys():
+            relevance_score[author] = relevance_score.get(author, 0) + b_r.get(author, 0)
+
+    print("Graph Done! \n")
+
+    return {"suggestions": suggestions, "query_suggestions": query_suggestions, "relevance_score": relevance_score}
 
 """
 Routers

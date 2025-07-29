@@ -37,8 +37,14 @@ if "github_authors" not in st.session_state:
 if "suggestions" not in st.session_state:
     st.session_state.suggestions = []
 
+if "query_suggestions" not in st.session_state:
+    st.session_state.query_suggestions = []
+
 if "auto_query" not in st.session_state:
     st.session_state.auto_query = ""
+
+if "auto_author" not in st.session_state:
+    st.session_state.auto_author = ""
 
 if "c_fig" not in st.session_state:
     st.session_state.c_fig = ""
@@ -78,6 +84,8 @@ def run_graph(state: State = None):
     state = graph.invoke(state)
 
     st.session_state.suggestions = state.get('suggestions')
+    st.session_state.query_suggestions = state.get('query_suggestions')
+
     total_response = ""
 
     author_response = state.get('author_response')
@@ -95,10 +103,10 @@ def run_graph(state: State = None):
         total_response += "\n\n### Relevant information in the MRST papers \n\n"
         total_response += paper_response
 
-    authors_relevance_score = state.get('authors_relevance_score')
-    if authors_relevance_score != None: 
-        if len(authors_relevance_score.keys()):
-            authors = sorted(list(zip(authors_relevance_score.keys(), authors_relevance_score.values())), key = lambda x: x[1])
+    relevance_score = state.get('relevance_score')
+    if relevance_score: 
+        if len(relevance_score.keys()):
+            authors = sorted(list(zip(relevance_score.keys(), relevance_score.values())), key = lambda x: x[1])
             total_n_authors = len(authors)
             n = min([total_n_authors, 5])
             st.session_state.authors  = authors[total_n_authors-n:][::-1] if total_n_authors else []
@@ -147,18 +155,29 @@ def reset_func():
     st.session_state.query = ""
     st.session_state.code_query = ""
 
-def pills_callback():
-    if st.session_state.get('auto_query'):
+def author_pills_callback():
+    if st.session_state.get('auto_author'):
         state = State(
-            query = f"Give me a brief summary of what work {st.session_state.get('auto_query')} does",
+            query = f"Give me a brief summary of what work {st.session_state.get('auto_author')} does",
             code_query= "",
             query_description = QueryDescriptionWithTools(
                 keywords = [],
-                authors=[st.session_state.get('auto_query')],
+                authors=[st.session_state.get('auto_author')],
                 problem_description="",
                 tools=False,
                 tools_input=""),
             start_node="RetrieveAuthorNode",
+            clustering=st.session_state.clustering,
+            github=st.session_state.github,
+            chapter_images=st.session_state.chapter_images)
+        run_graph(state)
+
+def query_pills_callback():
+    if st.session_state.get('auto_query'):
+        state = State(
+            query = st.session_state.get('auto_query'),
+            code_query= "",
+            start_node="InformationNode",
             clustering=st.session_state.clustering,
             github=st.session_state.github,
             chapter_images=st.session_state.chapter_images)
@@ -172,8 +191,19 @@ def create_suggestions():
                  default = None,
                  selection_mode="single",
                  label_visibility='hidden',
+                 key = 'auto_author',
+                 on_change=author_pills_callback)
+    
+    if len(st.session_state.query_suggestions):
+        st.markdown('#### Query Suggestions')
+        st.pills(label = 'Find out more about these topics',
+                 options = st.session_state.query_suggestions,
+                 default = None,
+                 selection_mode="single",
+                 label_visibility='hidden',
                  key = 'auto_query',
-                 on_change=pills_callback)
+                 on_change=query_pills_callback)
+
 
 with button:
     st.button(label = "Generate", on_click=run_graph, type = "primary")
@@ -284,8 +314,7 @@ if bool(st.session_state.c_fig):
                             clustering = st.session_state.clustering,
                             github = st.session_state.github,
                             chapter_images = st.session_state.chapter_images),),
-                          help = description,
-                          type = "primary")
+                          help = description)
 
     with suggestion_box:
         create_suggestions()
