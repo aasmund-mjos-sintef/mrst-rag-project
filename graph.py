@@ -558,6 +558,7 @@ def GenerateBookNode(state: State) -> State:
 
 def RetrieveAuthorNode(state: State) -> State:
     df = pd.read_pickle('datasets/book_embeddings.pkl')
+    df = df[df['file_type'].isin(['Advanced Book'])]
     authors_names = state.get('query_description').authors
     book_df = df[df['authors'].apply(lambda x: bool([True for a in x if name_in(a, authors_names)]))]
 
