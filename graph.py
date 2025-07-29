@@ -82,6 +82,7 @@ class State(TypedDict):
     relevant_papers_df: pd.DataFrame
     book_response: str
     author_response: str
+    paper_response: str
     suggestions: List[str]
     figures: List[Figure]
     c_fig: Figure
@@ -350,6 +351,12 @@ def cluster_names(clustered_df):
     name = weak_client.with_structured_output(ClusterDescription).invoke(msg).name
     return [(c,n) for c, n in zip(different_clusters, name)]
 
+def get_paper_response_if_not_cluster(query, df):
+    context = "\n + ""\n\n".join([f" title: {t}\n authors: {", ".join(a)}\n content: {c}" for t,a,c in zip(df['titles'], df['authors'], df['content'])])
+    msg = [{"role": "system", "content": f"""
+            You are going to guide the user to the authors best suited to help with their problem. Do not try and solve the users problem.
+            Context:{context}"""}, {"role":"user", "content": query}]
+    return weak_client.invoke(msg).content
 
 """
 Nodes
@@ -767,8 +774,12 @@ def SearchAndEvaluateNodeAbstracts(state: State) -> State:
                 c_name = cluster_names(clustered_df)
             else:
                 print("Couldn't Cluster")
+                paper_response = get_paper_response_if_not_cluster(query = state.get('query'), df=sorted_df.sort_values(by = 'avg_high_cosine', ascending = False).head(10))
 
-        return {"authors_relevance_score": authors_relevance_score, "relevant_papers_df": sorted_df, "c_fig": c_fig, "c_name": c_name}
+        else:
+            paper_response = get_paper_response_if_not_cluster(query = state.get('query'), df=sorted_df.sort_values(by = 'avg_high_cosine', ascending = False).head(10))
+
+        return {"authors_relevance_score": authors_relevance_score, "relevant_papers_df": sorted_df, "c_fig": c_fig, "c_name": c_name, "paper_response": paper_response}
 
     else:
         return {}

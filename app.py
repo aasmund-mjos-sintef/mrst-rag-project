@@ -68,7 +68,8 @@ def run_graph(state: State = None):
             state = State(query = st.session_state.query,
                         code_query = st.session_state.code_query,
                         start_node = "InformationNode",
-                        clustering = st.session_state.clustering)
+                        clustering = st.session_state.clustering,
+                        github = st.session_state.github)
         
         else:
             return
@@ -79,14 +80,19 @@ def run_graph(state: State = None):
     total_response = ""
 
     author_response = state.get('author_response')
-    if author_response != None:
+    if author_response:
         total_response += f" \n\n### Relevant information about {", ".join(state.get('query_description').authors)}  \n\n"
         total_response += author_response
 
     book_response = state.get('book_response')
-    if book_response != None:
+    if book_response:
         total_response += "\n\n### Relevant information in the MRST textbooks \n\n"
         total_response += book_response
+
+    paper_response = state.get('paper_response')
+    if paper_response:
+        total_response += "\n\n### Relevant information in the MRST papers \n\n"
+        total_response += paper_response
 
     authors_relevance_score = state.get('authors_relevance_score')
     if authors_relevance_score != None: 
@@ -152,7 +158,8 @@ def pills_callback():
                 tools=False,
                 tools_input=""),
             start_node="RetrieveAuthorNode",
-            clustering=st.session_state.clustering)
+            clustering=st.session_state.clustering,
+            github=st.session_state.github)
         run_graph(state)
 
 def create_suggestions():
@@ -169,7 +176,8 @@ def create_suggestions():
 with button:
     st.button(label = "Generate", on_click=run_graph, type = "primary")
     st.button(label = "Reset", on_click=reset_func)
-    st.checkbox(label = "Cluster", key = "clustering", value=True)
+    st.checkbox(label = "Cluster", key = "clustering", value=True, help = "If you want to cluster the MRST papers based on their content, check this box. This will take a bit longer to run.")
+    st.checkbox(label = "Git Hub", key = "github", value=True, help="If you want to retrieve relevant github commits in the MRST repository, check this box. This will take a bit longer to run.")
 
 response_area = st.markdown(st.session_state.response)
 
@@ -226,7 +234,7 @@ if bool(st.session_state.c_fig):
 
     st.markdown("### Map over 2D Reduced Vizualization of Relevant Papers")
 
-    fig_box, _, select_box, _, suggestion_box, _ = st.columns([4,1,4,1,4,1])
+    fig_box, _, select_box, _, suggestion_box, _ = st.columns([5,1,3,1,4,1])
 
     with fig_box:
 
@@ -246,7 +254,7 @@ if bool(st.session_state.c_fig):
             elem.addEventListener('wheel', panzoom.zoomWithWheel);
         </script>
     </div>
-    """, width = 600, height = 400)
+    """, width = int(600), height = int(400))
         
     with select_box:
 
@@ -264,7 +272,8 @@ if bool(st.session_state.c_fig):
                             query = name,
                             code_query = "",
                             start_node = "InformationNode",
-                            clustering = st.session_state.clustering),),
+                            clustering = st.session_state.clustering,
+                            github = st.session_state.github),),
                           type = "primary")
 
     with suggestion_box:
