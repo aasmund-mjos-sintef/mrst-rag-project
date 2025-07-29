@@ -57,86 +57,114 @@ with code_query:
 from graph import *
 import io
 
-def run_graph(query = None):
+def run_graph(state: State = None):
+
     response_area.markdown("#### Generating answer...")
-    code_query = st.session_state.code_query if query == None else ""
-    query = st.session_state.query if query == None else query
-    auto_query = st.session_state.auto_query
-    st.session_state.auto_query = None
 
-    if auto_query == None:
-        auto_query = ""
+    if not state:
 
-    if query != "" or code_query != "" or auto_query != "":
-        if auto_query != "":
-            state = graph.invoke(State(query = "Give me a brief summary of what work " + auto_query + " does", code_query= "", query_description = QueryDescriptionWithTools(keywords = [], authors=[auto_query], problem_description="", tools=False, tools_input=""), start_node="RetrieveAuthorNode", clustering=st.session_state.clustering))
+        if query != "" or code_query != "":
+
+            state = State(query = st.session_state.query,
+                        code_query = st.session_state.code_query,
+                        start_node = "InformationNode",
+                        clustering = st.session_state.clustering)
+        
         else:
-            state = graph.invoke(State(query = query, code_query=code_query, start_node="InformationNode", clustering=st.session_state.clustering))
+            return
 
-        st.session_state.suggestions = state.get('suggestions')
-        total_response = ""
+    state = graph.invoke(state)
 
-        author_response = state.get('author_response')
-        if author_response != None:
-            total_response += f" \n\n### Relevant information about {", ".join(state.get('query_description').authors)}  \n\n"
-            total_response += author_response
+    st.session_state.suggestions = state.get('suggestions')
+    total_response = ""
 
-        book_response = state.get('book_response')
-        if book_response != None:
-            total_response += "\n\n### Relevant information in the MRST textbooks \n\n"
-            total_response += book_response
+    author_response = state.get('author_response')
+    if author_response != None:
+        total_response += f" \n\n### Relevant information about {", ".join(state.get('query_description').authors)}  \n\n"
+        total_response += author_response
 
-        authors_relevance_score = state.get('authors_relevance_score')
-        if authors_relevance_score != None: 
-            if len(authors_relevance_score.keys()):
-                authors = sorted(list(zip(authors_relevance_score.keys(), authors_relevance_score.values())), key = lambda x: x[1])
-                total_n_authors = len(authors)
-                n = min([total_n_authors, 5])
-                st.session_state.authors  = authors[total_n_authors-n:][::-1] if total_n_authors else []
-        else:
-            st.session_state.authors = []
+    book_response = state.get('book_response')
+    if book_response != None:
+        total_response += "\n\n### Relevant information in the MRST textbooks \n\n"
+        total_response += book_response
 
-        github_authors_relevance_score = state.get('github_authors_relevance_score')
-        if github_authors_relevance_score != None:
-            if len(github_authors_relevance_score.keys()):
-                authors = sorted(list(zip(github_authors_relevance_score.keys(), github_authors_relevance_score.values())), key = lambda x: x[1])
-                total_n_authors = len(authors)
-                n = min([total_n_authors, 5])
-                st.session_state.github_authors  = authors[total_n_authors-n:][::-1] if total_n_authors else []
-        else:
-            st.session_state.github_authors = []
+    authors_relevance_score = state.get('authors_relevance_score')
+    if authors_relevance_score != None: 
+        if len(authors_relevance_score.keys()):
+            authors = sorted(list(zip(authors_relevance_score.keys(), authors_relevance_score.values())), key = lambda x: x[1])
+            total_n_authors = len(authors)
+            n = min([total_n_authors, 5])
+            st.session_state.authors  = authors[total_n_authors-n:][::-1] if total_n_authors else []
+    else:
+        st.session_state.authors = []
 
-        st.session_state.response = total_response
+    github_authors_relevance_score = state.get('github_authors_relevance_score')
+    if github_authors_relevance_score != None:
+        if len(github_authors_relevance_score.keys()):
+            authors = sorted(list(zip(github_authors_relevance_score.keys(), github_authors_relevance_score.values())), key = lambda x: x[1])
+            total_n_authors = len(authors)
+            n = min([total_n_authors, 5])
+            st.session_state.github_authors  = authors[total_n_authors-n:][::-1] if total_n_authors else []
+    else:
+        st.session_state.github_authors = []
 
-        figures = state.get('figures')
-        chapter_info = state.get('chapter_info')
-        images = []
+    st.session_state.response = total_response
 
-        if figures != None:
-            for c_info, fig in zip(chapter_info, figures):
+    figures = state.get('figures')
+    chapter_info = state.get('chapter_info')
+    images = []
 
-                buf = io.StringIO()
-                fig.savefig(buf, format = 'svg', facecolor = "#faf9f7")
-                image = buf.getvalue()
-                images.append((c_info, image))
-                buf.close()
+    if figures != None:
+        for c_info, fig in zip(chapter_info, figures):
 
-        st.session_state.figures = images
-
-        c_fig = state.get('c_fig')
-        if c_fig != None:
             buf = io.StringIO()
-            c_fig.savefig(buf, format = 'svg', facecolor = "#faf9f7")
+            fig.savefig(buf, format = 'svg', facecolor = "#faf9f7")
             image = buf.getvalue()
-            st.session_state.c_fig = image
-            st.session_state.c_name = state.get('c_name')
+            images.append((c_info, image))
             buf.close()
-        else:
-            st.session_state.c_fig = ""
+
+    st.session_state.figures = images
+
+    c_fig = state.get('c_fig')
+    if c_fig != None:
+        buf = io.StringIO()
+        c_fig.savefig(buf, format = 'svg', facecolor = "#faf9f7")
+        image = buf.getvalue()
+        st.session_state.c_fig = image
+        st.session_state.c_name = state.get('c_name')
+        buf.close()
+    else:
+        st.session_state.c_fig = ""
 
 def reset_func():
     st.session_state.query = ""
     st.session_state.code_query = ""
+
+def pills_callback():
+    if st.session_state.get('auto_query'):
+        state = State(
+            query = f"Give me a brief summary of what work {st.session_state.get('auto_query')} does",
+            code_query= "",
+            query_description = QueryDescriptionWithTools(
+                keywords = [],
+                authors=[st.session_state.get('auto_query')],
+                problem_description="",
+                tools=False,
+                tools_input=""),
+            start_node="RetrieveAuthorNode",
+            clustering=st.session_state.clustering)
+        run_graph(state)
+
+def create_suggestions():
+    if len(st.session_state.suggestions):
+        st.markdown('#### Suggested Authors')
+        st.pills(label = 'Find out more about the authors',
+                 options = st.session_state.suggestions,
+                 default = None,
+                 selection_mode="single",
+                 label_visibility='hidden',
+                 key = 'auto_query',
+                 on_change=pills_callback)
 
 with button:
     st.button(label = "Generate", on_click=run_graph, type = "primary")
@@ -229,15 +257,18 @@ if bool(st.session_state.c_fig):
             with color:
                 st.markdown(f'<div style="width: 40px; height: 40px; background-color: {cluster_to_color.get(cluster, "#2B2929")}; border-radius: 50%;"></div>', unsafe_allow_html=True)
             with text:
-                st.button(label = name, key = name, on_click=run_graph, args = [name], type = "primary")
+                st.button(label = name,
+                          key = name,
+                          on_click=run_graph,
+                          args = (State(
+                            query = name,
+                            code_query = "",
+                            start_node = "InformationNode",
+                            clustering = st.session_state.clustering),),
+                          type = "primary")
 
     with suggestion_box:
-
-        if len(st.session_state.suggestions):
-            st.markdown('#### Suggested Authors')
-            st.pills(label = 'Find out more about the authors', options = st.session_state.suggestions, default = None, selection_mode="single", label_visibility='hidden', key = 'auto_query', on_change=run_graph)
+        create_suggestions()
 
 else:
-    if len(st.session_state.suggestions):
-            st.markdown('#### Suggested Authors')
-            st.pills(label = 'Find out more about the authors', options = st.session_state.suggestions, default = None, selection_mode="single", label_visibility='hidden', key = 'auto_query', on_change=run_graph)
+    create_suggestions()
