@@ -94,6 +94,7 @@ class State(TypedDict):
     github_authors_relevance_score: dict[str, float]
     cosine_dict: dict[str, tuple[float, float]]
     clustering: bool
+    github: bool
 
 """
 Helper objects
@@ -750,6 +751,8 @@ def SearchAndEvaluateNodeAbstracts(state: State) -> State:
         print("Done evaluating")
         c_fig = None
         c_name = None
+        paper_response = ""
+
         if state.get('clustering'):
 
             print("Clustering")
@@ -866,6 +869,12 @@ def BookRouter(state: State) -> Literal["GenerateBookNode", "SearchAndEvaluateNo
         return "GenerateBookNode"
     else:
         return SearchRouter(state)
+    
+def GitRouter(state: State) -> Literal["GitNode", "SuggestionsNode"]:
+    if state.get('github'):
+        return "GitNode"
+    else:
+        return "SuggestionsNode"
 
 """
 Setting up the graph
@@ -889,8 +898,8 @@ graph_builder.add_conditional_edges("InformationNode", RetrievalRouter, {"Search
 graph_builder.add_conditional_edges("RetrieveNode", BookRouter, {"GenerateBookNode":"GenerateBookNode", "SearchAndEvaluateNode":"SearchAndEvaluateNode", "SearchAndEvaluateNodeAbstracts":"SearchAndEvaluateNodeAbstracts"})
 graph_builder.add_conditional_edges("GenerateBookNode", SearchRouter, {"SearchAndEvaluateNode":"SearchAndEvaluateNode", "SearchAndEvaluateNodeAbstracts":"SearchAndEvaluateNodeAbstracts"})
 graph_builder.add_edge("SearchMRSTModulesNode", "InformationNode")
-graph_builder.add_edge("SearchAndEvaluateNode", "GitNode")
-graph_builder.add_edge("SearchAndEvaluateNodeAbstracts", "GitNode")
+graph_builder.add_conditional_edges("SearchAndEvaluateNode", GitRouter, {"GitNode": "GitNode", "SuggestionsNode": "SuggestionsNode"})
+graph_builder.add_conditional_edges("SearchAndEvaluateNodeAbstracts", GitRouter, {"GitNode": "GitNode", "SuggestionsNode": "SuggestionsNode"})
 graph_builder.add_edge("RetrieveAuthorNode", "GenerateAuthorNode")
 graph_builder.add_edge("GenerateAuthorNode", "SuggestionsNode")
 graph_builder.add_edge("GitNode", "SuggestionsNode")
