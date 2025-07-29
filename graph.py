@@ -154,6 +154,14 @@ introduction_section_to_author = {
     15: ["Knut-Andreas Lie"],
 }
 
+advanced_book = "Advanced Book"
+introduction_book = "Introduction Book"
+
+book_to_url = {
+    advanced_book: "[Advanced Modeling with the MATLAB Reservoir Simulation Toolbox](https://www.cambridge.org/core/services/aop-cambridge-core/content/view/7AC2425C73F6F729DB88DB1A504FA1E7/9781316519967AR.pdf/Advanced_Modeling_with_the_MATLAB_Reservoir_Simulation_Toolbox.pdf?event-type=FTLA)",
+    introduction_book: "[An Introduction to Reservoir Simulation Using MATLAB/GNU Octave](https://www.cambridge.org/core/services/aop-cambridge-core/content/view/F48C3D8C88A3F67E4D97D4E16970F894/9781108492430AR.pdf/An_Introduction_to_Reservoir_Simulation_Using_MATLAB_GNU_Octave.pdf?event-type=FTLA)"
+}
+
 """
 Helper functions
 """
@@ -511,11 +519,18 @@ def GenerateBookNode(state: State) -> State:
 
     context = "\n\n".join(["Section " + sections[i] + " in book: " + book[i] + "\n Title" + titles[i] + "\n Authors: " + ",\t".join(authors[i]) + "\n Content: " + content[i] for i in range(len(df))])
     msg = [{"role": "system", "content": f"""You are the Generator in a RAG application.
-            You are going to state in which book and which section the user can learn more,
-            and who they should contact based on the authors of the relevant book sections.
-            Do not mention the title.
+            You are going to guide the user to which section in the book could be relevant for their question,
+            and state which authors they can reach out to for questions regarding their query.
+            You are going to call the book 'Advanced Book',
+            Do not mention the titles of the chapters.
+            Simply state which researchers work with the relevant subtopics,
+            and therefore who the user should contact.
+            The context is relevant sections in the 'Advanced Book'
             \n Context:\n {context}"""}, {"role": "user", "content": query}]
-    return {"book_response": weak_client.invoke(msg).content, "figures": figures, "chapter_info": chapter_info}
+
+    return {"book_response": weak_client.invoke(msg).content.replace(advanced_book, book_to_url.get(advanced_book, "")).replace(introduction_book, book_to_url.get(introduction_book, "")),
+            "figures": figures,
+            "chapter_info": chapter_info}
 
 def RetrieveAuthorNode(state: State) -> State:
     df = pd.read_pickle('datasets/book_embeddings.pkl')
@@ -565,7 +580,7 @@ def GenerateAuthorNode(state: State) -> State:
         msg = [{"role": "system", "content": "You are the Generator in RAG application. "+
             "You are going to answer the users query, based on the context given. If there are multiple researchers mentioned in the users query, "+
             "answer the query seperately for each researcher."+
-            "The context given is titles of chapters in the 'Advanced Book', and their respective authors. "+
+            "The context given is titles of chapters in the 'Advanced Book', and their respective authors. When mentioning the book write 'Advanced Book' as the name"+
             "\n Context:\n" + context}, {"role": "user", "content": query}]
         
         author_response += "#### MRST Books \n\n"
@@ -607,7 +622,7 @@ def GenerateAuthorNode(state: State) -> State:
         author_response = "Sorry, but I couldn't find any relevant information"
 
     else:
-        return {"author_response": author_response, "figures": figures, "chapter_info": chapter_info}
+        return {"author_response": author_response.replace(advanced_book, book_to_url.get(advanced_book, "")).replace(introduction_book, book_to_url.get(introduction_book, "")), "figures": figures, "chapter_info": chapter_info}
 
 def SearchAndEvaluateNode(state: State) -> State:
     df = pd.read_pickle('datasets/folk_ntnu_embeddings.pkl')
@@ -863,8 +878,8 @@ def SuggestionsNode(state: State) -> State:
     
     msg = [{"role": "system", "content": f"""You are a next query suggestion maker tool in the Matlab Reservoir Simulation Toolbox competence query developed by SINTEF.
             The users query has been used to generate answers, which is the context provided.
-            Based only on the provided context and the users query, generate a list of short suggestions for further queries.
-            The queries should be shorter than 10 words, and not include any authors or sections, only specific topics of reservoir simulation.
+            Based only on the provided context, generate a list of of subtopics for further simulations
+            Create a maximum of 7 such suggestions. 
             Context: {total_context}"""}, {"role": "user", "content": state.get('query')}]
     
     query_suggestions = set(weak_client.with_structured_output(QuerySuggestions).invoke(msg).suggestions)
