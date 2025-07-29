@@ -358,149 +358,84 @@ Nodes
 def InformationNode(state: State) -> State:
     query = state.get("query")
 
-    conventional = True # choose if normal method to call tools
+    msg = [('system', f"""
+    You are an assistant for the Matlab Reservoir Toolbox developed by SINTEF.
+    You are going to extract keywords and a problem description from the user query.
+    The keywords should help distinguish different SINTEF researchers MRST expertize fields,
+    so you should be extremely specific when generating keywords.
+            
+    For example, if the query is:
+        - Where can I learn more about chemical eor?
+    Possible keywords are (even though you should generate more):
+        - chemical eor
+        - chemical enhanced oil recovery
+        - polymer flooding
+            
+    Format the output as such:
+    {{
+        keywords: [<list_of_keywords>],
+        problem_description: <problem_description>
+    }}
+            
+    You can use the tool 'web_search_mrst' tp get content and further links from the mrst webpage.
+    Only use the tool if you're sure the link is relevant.
+    Here's a list of possible start links, if you are going to use the tool, choose the most relevant one:
 
-    if conventional:
+        {web_search_mrst.invoke(input = 'https://www.sintef.no/projectweb/mrst/modules/')[1]}
 
-        msg = [('system', f"""
-        You are an assistant for the Matlab Reservoir Toolbox developed by SINTEF.
-        You are going to extract keywords and a problem description from the user query.
-        The keywords should help distinguish different SINTEF researchers MRST expertize fields,
-        so you should be extremely specific when generating keywords.
-                
-        For example, if the query is:
-            - Where can I learn more about chemical eor?
-        Possible keywords are (even though you should generate more):
-            - chemical eor
-            - chemical enhanced oil recovery
-            - polymer flooding
-                
-        Format the output as such:
-        {{
-            keywords: [<list_of_keywords>],
-            problem_description: <problem_description>
-        }}
-                
-        You can use the tool 'web_search_mrst' tp get content and further links from the mrst webpage.
-        Only use the tool if you're sure the link is relevant.
-        Here's a list of possible start links, if you are going to use the tool, choose the most relevant one:
+    """),
+    ("user", query)]
 
-            {web_search_mrst.invoke(input = 'https://www.sintef.no/projectweb/mrst/modules/')[1]}
+    response = tools_agent.invoke({"messages": msg})
+    answer = response['messages'][-1].content
 
-        """),
-        ("user", query)]
+    k = 'keywords: '
+    p = 'problem_description: '
 
-        response = tools_agent.invoke({"messages": msg})
-        answer = response['messages'][-1].content
+    keywords_index = answer.find(k)
+    problem_index = answer.find(p)
 
-        k = 'keywords: '
-        p = 'problem_description: '
+    keywords_split = answer[keywords_index + len(k):problem_index]
+    problem_split = answer[problem_index + len(p):]
 
-        keywords_index = answer.find(k)
-        problem_index = answer.find(p)
+    keywords = [i for i in split_by_more(keywords_split, ['[',']','"',',']) if i.strip()][:-1]
+    problem_description = [i for i in split_by_more(problem_split, ['"']) if i.strip()][0]
 
-        keywords_split = answer[keywords_index + len(k):problem_index]
-        problem_split = answer[problem_index + len(p):]
+    authors = strong_client.with_structured_output(Authors).invoke([{"role": "system", "content": "You are going to extract specific SINTEF researchers from a users query. In other words, only return a list if there is a human name in the query"}, {"role": "user", "content": query}]).authors
 
-        keywords = [i for i in split_by_more(keywords_split, ['[',']','"',',']) if i.strip()][:-1]
-        problem_description = [i for i in split_by_more(problem_split, ['"']) if i.strip()][0]
+    authors = [a for a in authors if "sintef" not in a.lower()]
 
-        authors = strong_client.with_structured_output(Authors).invoke([{"role": "system", "content": "You are going to extract specific SINTEF researchers from a users query"}, {"role": "user", "content": query}]).authors
+    expensive = False
+    if expensive == True:
+        if len(query) < 500:    # Since we use an expensive model, we only allow smaller prompts into the llm
 
-        authors = [a for a in authors if "sintef" not in a.lower()]
+            keywords_string = ""
+            for k in keywords:
+                keywords_string += "-"+k
+                keywords_string += "\n"
 
-        expensive = False
-        if expensive == True:
-            if len(query) < 500:    # Since we use an expensive model, we only allow smaller prompts into the llm
+            n = len(keywords)
 
-                keywords_string = ""
-                for k in keywords:
-                    keywords_string += "-"+k
-                    keywords_string += "\n"
+            sys_msg = f"""You are going to determine how specific these keywords are related to the field of reservoir simulation in relation to the users query.
+            For example, keywords like 'reservoir simulation', 'numerical mathematics' should always have a low score like 1 or 2, since they are very general. 
+            For example, a keyword like 'chemical enhanced oil recovery' should be very high if the query is 'What can you tell me about chemical eor'
+            Generate scores for all keywords, so a total of {n}.
+            Query:\n{query}
+            
+            Keywords:\n {keywords_string}"""
 
-                n = len(keywords)
+            specific_score = []
 
-                sys_msg = f"""You are going to determine how specific these keywords are related to the field of reservoir simulation in relation to the users query.
-                For example, keywords like 'reservoir simulation', 'numerical mathematics' should always have a low score like 1 or 2, since they are very general. 
-                For example, a keyword like 'chemical enhanced oil recovery' should be very high if the query is 'What can you tell me about chemical eor'
-                Generate scores for all keywords, so a total of {n}.
-                Query:\n{query}
-                
-                Keywords:\n {keywords_string}"""
+            i = 0
+            while len(specific_score) != n and i<3:
+                i+=1
+                specific_score = beast_client.with_structured_output(SpecificScore).invoke([{"role": "system", "content": sys_msg}]).specific_scores
 
-                specific_score = []
+            if i < 3:
+                keywords = [keywords[j] for j in range(n) if specific_score[j]>6]
 
-                i = 0
-                while len(specific_score) != n and i<3:
-                    i+=1
-                    specific_score = beast_client.with_structured_output(SpecificScore).invoke([{"role": "system", "content": sys_msg}]).specific_scores
-
-                if i < 3:
-                    keywords = [keywords[j] for j in range(n) if specific_score[j]>6]
-
-        query_description = QueryDescriptionWithTools(keywords=keywords, problem_description=problem_description, authors=authors, tools=False, tools_input="")
-        return {"query_description": query_description}
-
-    else:
-        query_description = state.get("query_description")
-
-        if query_description == None:
-
-            prompt = [{"role": "system", "content": f"""
-            You are an assistant for the Matlab Reservoir Toolbox developed by SINTEF.
-            You are going to extract keywords, authors and a problem description from the user query.
-            The keywords should help distinguish different SINTEF researchers MRST expertize fields,
-            so you should be very specific when generating keywords. For example, do NOT include keywords like
-            'reservoir simulation' or 'numerical simulation'.
-                    
-            You can use the tool "web_search_mrst":
-            name: {web_search_mrst.name}
-            description: {web_search_mrst.description}
-
-            to get content and further links from the mrst webpage, if you feel like that will help you generate keywords.
-            Here's a list of possible inputs, if you are going to use the tool, choose the most relevant one:
-
-            {web_search_mrst.invoke(input = 'https://www.sintef.no/projectweb/mrst/modules/')[1]}
-
-            """},
-            {"role": "user", "content": query}]
-
-            query_description = strong_client.with_structured_output(QueryDescriptionWithTools).invoke(prompt)
-
-            return {"query_description": query_description}
-
-        else:
-            tools_calls = state.get('tools_calls')
-
-            prompt = [{"role": "system", "content": f"""
-            You are an assistant for the Matlab Reservoir Toolbox developed by SINTEF.
-            You are going to extract keywords, authors and a problem description from the user query.
-            The keywords should help distinguish different SINTEF researchers MRST expertize fields,
-            so you should be very specific when generating keywords. For example, do NOT include keywords like
-            'reservoir simulation' or 'numerical simulation'.
-                    
-            You have used the tool "web_search_mrst":
-            name: {web_search_mrst.name}
-            description: {web_search_mrst.description}
-
-            Here is your tool call.
-
-            tools_calls:
-            {tools_calls[0]}
-
-            """},
-            {"role": "user", "content": query}]
-
-            response = strong_client.with_structured_output(QueryDescription).invoke(prompt)
-            return_val = QueryDescriptionWithTools(
-                authors = query_description.authors,
-                keywords = list(set(response.keywords + query_description.keywords)),
-                problem_description = response.problem_description,
-                tools = False,
-                tools_input = ""
-                )
-
-            return {"query_description": return_val}
+    query_description = QueryDescriptionWithTools(keywords=keywords, problem_description=problem_description, authors=authors, tools=False, tools_input="")
+    return {"query_description": query_description}
 
 def SearchMRSTModulesNode(state: State) -> State:
     link = state.get('query_description').tools_input
