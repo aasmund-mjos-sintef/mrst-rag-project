@@ -95,6 +95,7 @@ class State(TypedDict):
     cosine_dict: dict[str, tuple[float, float]]
     clustering: bool
     github: bool
+    chapter_images: bool
 
 """
 Helper objects
@@ -349,8 +350,10 @@ def cluster_names(clustered_df):
             identified by the following top bigrams, so a total of {n}. Your mission is to create names and descriptions that help highlight the differences between the clusters.
             
             -{"\n\n-".join(top_words)}"""}]
-    name = weak_client.with_structured_output(ClusterDescription).invoke(msg).name
-    return [(c,n) for c, n in zip(different_clusters, name)]
+    cluster_description = weak_client.with_structured_output(ClusterDescription).invoke(msg)
+    name = cluster_description.name
+    description = cluster_description.description
+    return zip(different_clusters, name, description)
 
 def get_paper_response_if_not_cluster(query, df):
     context = "\n + ""\n\n".join([f" title: {t}\n authors: {", ".join(a)}\n content: {c}" for t,a,c in zip(df['titles'], df['authors'], df['content'])])
@@ -487,7 +490,8 @@ def GenerateBookNode(state: State) -> State:
         else:
             rel_authors = introduction_section_to_author.get(c)
         chapter_info.append((c,b,rel_authors))
-        figures.append(generate_book_graph_figure(c, b, sections=s))
+        if state.get('chapter_images', True):
+            figures.append(generate_book_graph_figure(c, b, sections=s))
 
     df = df.sort_values(by = 'cosine', ascending=False).head(5)
 
@@ -817,8 +821,6 @@ def GitNode(state: State) -> State:
         for n in name.keys():
             total_freq_dict[n] = total_freq_dict.get(n,0) + name[n]
 
-    print("\n")
-
     return {"code_df": sorted_df, "coding_keywords": coding_keywords, "github_authors_relevance_score": total_freq_dict}
 
 def SuggestionsNode(state: State) -> State:
@@ -838,6 +840,8 @@ def SuggestionsNode(state: State) -> State:
         suggested_authors = authors[total_n_authors-n:]
         for a, s in suggested_authors:
             suggestions.add(a)
+
+    print("\n")
 
     return {"suggestions": suggestions}
 

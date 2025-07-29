@@ -11,7 +11,7 @@ with mrst_logo:
     st.image("mrst_logo.webp")
 
 with title:
-    st.markdown("# MRST Virtual assistant")
+    st.markdown("# MRST Virtual Assistant")
 
 with sintef_logo:
     st.image("sintef_logo.png")
@@ -69,7 +69,8 @@ def run_graph(state: State = None):
                         code_query = st.session_state.code_query,
                         start_node = "InformationNode",
                         clustering = st.session_state.clustering,
-                        github = st.session_state.github)
+                        github = st.session_state.github,
+                        chapter_images = st.session_state.chapter_images)
         
         else:
             return
@@ -120,7 +121,7 @@ def run_graph(state: State = None):
     chapter_info = state.get('chapter_info')
     images = []
 
-    if figures != None:
+    if figures:
         for c_info, fig in zip(chapter_info, figures):
 
             buf = io.StringIO()
@@ -159,7 +160,8 @@ def pills_callback():
                 tools_input=""),
             start_node="RetrieveAuthorNode",
             clustering=st.session_state.clustering,
-            github=st.session_state.github)
+            github=st.session_state.github,
+            chapter_images=st.session_state.chapter_images)
         run_graph(state)
 
 def create_suggestions():
@@ -177,7 +179,8 @@ with button:
     st.button(label = "Generate", on_click=run_graph, type = "primary")
     st.button(label = "Reset", on_click=reset_func)
     st.checkbox(label = "Cluster", key = "clustering", value=True, help = "If you want to cluster the MRST papers based on their content, check this box. This will take a bit longer to run.")
-    st.checkbox(label = "Git Hub", key = "github", value=True, help="If you want to retrieve relevant github commits in the MRST repository, check this box. This will take a bit longer to run.")
+    st.checkbox(label = "Chapter Images", key = "chapter_images", value=True, help="If you want to show a graph over the relevant chapters in the MRST textbooks, check this box. This will take a bit longer to run.")
+    st.checkbox(label = "Git Hub", key = "github", value=False, help="If you want to retrieve relevant github commits in the MRST repository, check this box. This will take a bit longer to run.")
 
 response_area = st.markdown(st.session_state.response)
 
@@ -216,8 +219,11 @@ with papers:
         st.markdown("### Based on the retrieved MRST papers, I would recommend reaching out to: ")
 
     for a, s in st.session_state.authors:
-        st.markdown(f'#### {a}')
-        st.markdown('With a relevance score of ' + str(s))
+        author_box, score_box = st.columns([1,1])
+        with author_box:
+            st.markdown(f'**{a}**')
+        with score_box:
+            st.markdown(f'With a relevance score of :orange[{str(round(s))}]')
 
 with github:
 
@@ -225,8 +231,11 @@ with github:
         st.markdown("### Based on the relevant commits in the MRST github repository, I would recommend reaching out to: ")
 
     for a, s in st.session_state.github_authors:
-        st.markdown(f'#### {a}')
-        st.markdown('With '+ str(s) + ' commits in retrieved folders')
+        author_box, score_box = st.columns([1,1])
+        with author_box:
+            st.markdown(f'**{a}**')
+        with score_box:
+            st.markdown(f'With :orange[{str(s)}] commits in retrieved folders')
 
 st.divider()
 
@@ -260,7 +269,7 @@ if bool(st.session_state.c_fig):
 
         st.markdown("#### Cluster Names")
 
-        for cluster, name in st.session_state.c_name:
+        for cluster, name, description in st.session_state.c_name:
             color, text = st.columns([1,5])
             with color:
                 st.markdown(f'<div style="width: 40px; height: 40px; background-color: {cluster_to_color.get(cluster, "#2B2929")}; border-radius: 50%;"></div>', unsafe_allow_html=True)
@@ -273,7 +282,9 @@ if bool(st.session_state.c_fig):
                             code_query = "",
                             start_node = "InformationNode",
                             clustering = st.session_state.clustering,
-                            github = st.session_state.github),),
+                            github = st.session_state.github,
+                            chapter_images = st.session_state.chapter_images),),
+                          help = description,
                           type = "primary")
 
     with suggestion_box:
