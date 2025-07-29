@@ -172,41 +172,6 @@ for c_info, img in st.session_state.figures:
     
     st.markdown(f"Map over chapter {c_info[0]} in {c_info[1]} by {", ".join(c_info[2])}. A green node means that I found relevant content in that chapter. You can zoom in by scrolling.")
 
-if bool(st.session_state.c_fig):
-
-    fig_box, select_box = st.columns([2,6])
-
-    with fig_box:
-
-        components.html("""
-    <div style="
-        padding: 10px;
-        margin-bottom: 20px;
-        background-color: #faf9f7;
-        display: inline-block;
-        box-sizing: border-box;
-        min-height: 100px;
-    ">
-        <div id="svg-container" style="width: auto; height: auto; overflow: auto;">
-            """ + st.session_state.c_fig + """
-        </div>
-        <script src="https://unpkg.com/@panzoom/panzoom/dist/panzoom.min.js"></script>
-        <script>
-            var elem = document.getElementById('svg-container');
-            var panzoom = Panzoom(elem, { maxScale: 5, minScale: 1});
-            elem.addEventListener('wheel', panzoom.zoomWithWheel);
-        </script>
-    </div>
-    """, width = 300, height = 300)
-        
-    with select_box:
-        for cluster, name in st.session_state.c_name:
-            color, text = st.columns([1,5])
-            with color:
-                st.markdown(f'<div style="width: 20px; height: 20px; background-color: {cluster_to_color.get(cluster, "#2B2929")}; border-radius: 50%;"></div>', unsafe_allow_html=True)
-            with text:
-                st.button(label = name, key = name, on_click=run_graph, args = [name], type = "secondary", use_container_width=True)
-
 papers, github, _ = st.columns([6,6,1])
 
 with papers:
@@ -227,6 +192,52 @@ with github:
         st.markdown(f'#### {a}')
         st.markdown('With '+ str(s) + ' commits in retrieved folders')
 
-if len(st.session_state.suggestions):
-    st.markdown('#### If you want to learn more about one of the authors, click on them')
-    st.pills(label = 'Find out more about the authors', options = st.session_state.suggestions, default = None, selection_mode="single", label_visibility='hidden', key = 'auto_query', on_change=run_graph)
+st.divider()
+
+if bool(st.session_state.c_fig):
+
+    st.markdown("### Map over 2D Reduced Vizualization of Relevant Papers")
+
+    fig_box, _, select_box, _, suggestion_box, _ = st.columns([4,1,4,1,4,1])
+
+    with fig_box:
+
+        components.html("""
+    <div style="
+        padding: 10px;
+        background-color: #faf9f7;
+        display: inline-block;
+    ">
+        <div id="svg-container" style="width: auto; height: auto; overflow: auto;">
+            """ + st.session_state.c_fig + """
+        </div>
+        <script src="https://unpkg.com/@panzoom/panzoom/dist/panzoom.min.js"></script>
+        <script>
+            var elem = document.getElementById('svg-container');
+            var panzoom = Panzoom(elem, { maxScale: 5, minScale: 1});
+            elem.addEventListener('wheel', panzoom.zoomWithWheel);
+        </script>
+    </div>
+    """, width = 600, height = 400)
+        
+    with select_box:
+
+        st.markdown("#### Cluster Names")
+
+        for cluster, name in st.session_state.c_name:
+            color, text = st.columns([1,5])
+            with color:
+                st.markdown(f'<div style="width: 40px; height: 40px; background-color: {cluster_to_color.get(cluster, "#2B2929")}; border-radius: 50%;"></div>', unsafe_allow_html=True)
+            with text:
+                st.button(label = name, key = name, on_click=run_graph, args = [name], type = "primary")
+
+    with suggestion_box:
+
+        if len(st.session_state.suggestions):
+            st.markdown('#### Suggested Authors')
+            st.pills(label = 'Find out more about the authors', options = st.session_state.suggestions, default = None, selection_mode="single", label_visibility='hidden', key = 'auto_query', on_change=run_graph)
+
+else:
+    if len(st.session_state.suggestions):
+            st.markdown('#### Suggested Authors')
+            st.pills(label = 'Find out more about the authors', options = st.session_state.suggestions, default = None, selection_mode="single", label_visibility='hidden', key = 'auto_query', on_change=run_graph)

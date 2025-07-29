@@ -316,14 +316,14 @@ def hdbscan_cluster(reduced_df):
         return reduced_df
 
     if len(reduced_df) < 20:
-        min_cluster_size = 2
+        min_cluster_size = 3
     else:
-        min_cluster_size = int(len(reduced_df) / 20)+1
+        min_cluster_size = int(len(reduced_df) / 10)+1
 
     embeddings = reduced_df['embedding_umap'].tolist()
     clusterer = hdbscan.HDBSCAN(min_cluster_size=min_cluster_size,
                                     min_samples=5,
-                                    cluster_selection_epsilon=0.5,
+                                    cluster_selection_epsilon=0.6,
                                     metric='euclidean', 
                                     cluster_selection_method='eom', 
                                     allow_single_cluster=False,
@@ -755,7 +755,7 @@ def SearchAndEvaluateNodeAbstracts(state: State) -> State:
     vec_prod = np.einsum('i,k->ki',np.linalg.norm(vector, axis = -1),np.linalg.norm(embeddings, axis = -1))
     cosines = dot_prod/vec_prod
     df['cosine'] = np.max(cosines, axis = -1)
-    threshold = min([0.5, np.max(cosines)-0.2])
+    threshold = min([0.5, np.max(cosines)-0.15])
 
     print("Threshold set to: ", threshold)
 
@@ -816,7 +816,7 @@ def SearchAndEvaluateNodeAbstracts(state: State) -> State:
                 print("Successfully Clustered")
                 embeddings_768 = clustered_df['embedding'].tolist()
 
-                fig, ax = plt.subplots(figsize=(3, 3))
+                fig, ax = plt.subplots(figsize=(6, 4))
                 fig.set_facecolor('#faf9f7')
                 ax.set_facecolor('#faf9f7')
                 clusters = clustered_df['cluster'].tolist()
