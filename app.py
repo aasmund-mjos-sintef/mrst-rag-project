@@ -76,7 +76,8 @@ def run_graph(state: State = None):
                         start_node = "InformationNode",
                         clustering = st.session_state.clustering,
                         github = st.session_state.github,
-                        chapter_images = st.session_state.chapter_images)
+                        chapter_images = st.session_state.chapter_images,
+                        text_answer = st.session_state.text_answer)
         
         else:
             return
@@ -169,7 +170,8 @@ def author_pills_callback():
             start_node="RetrieveAuthorNode",
             clustering=st.session_state.clustering,
             github=st.session_state.github,
-            chapter_images=st.session_state.chapter_images)
+            chapter_images=st.session_state.chapter_images,
+            text_answer=st.session_state.text_answer)
         run_graph(state)
 
 def query_pills_callback():
@@ -180,7 +182,8 @@ def query_pills_callback():
             start_node="InformationNode",
             clustering=st.session_state.clustering,
             github=st.session_state.github,
-            chapter_images=st.session_state.chapter_images)
+            chapter_images=st.session_state.chapter_images,
+            text_answer=st.session_state.text_answer)
         run_graph(state)
 
 def create_suggestions():
@@ -210,6 +213,7 @@ with button:
     st.button(label = "Reset", on_click=reset_func)
     st.checkbox(label = "Cluster", key = "clustering", value=True, help = "If you want to cluster the MRST papers based on their content, check this box. This will take a bit longer to run.")
     st.checkbox(label = "Chapter Images", key = "chapter_images", value=True, help="If you want to show a graph over the relevant chapters in the MRST textbooks, check this box. This will take a bit longer to run.")
+    st.checkbox(label = "Text Answer", key = "text_answer", value=True, help="If you want to get a text answer to your query, check this box. This will take a bit longer to run.")
     st.checkbox(label = "Git Hub", key = "github", value=False, help="If you want to retrieve relevant github commits in the MRST repository, check this box. This will take a bit longer to run.")
 
 response_area = st.markdown(st.session_state.response)
@@ -286,7 +290,8 @@ if bool(st.session_state.c_fig):
                             start_node = "InformationNode",
                             clustering = st.session_state.clustering,
                             github = st.session_state.github,
-                            chapter_images = st.session_state.chapter_images),),
+                            chapter_images = st.session_state.chapter_images,
+                            text_answer=st.session_state.text_answer),),
                           help = description)
 
     with suggestion_box:
@@ -320,4 +325,4 @@ for c_info, img in st.session_state.figures:
 </div>
 """, height = 550)
     
-    st.markdown(f"Map over chapter {c_info[0]} in {c_info[1]} by {", ".join(c_info[2])}. A green node means that I found relevant content in that chapter. You can zoom in by scrolling.")
+    st.markdown(f"Map over chapter {c_info[0]} in {book_to_url.get(c_info[1])} by {", ".join(c_info[2])}. A green node means that I found relevant content in that chapter. You can zoom in by scrolling.")

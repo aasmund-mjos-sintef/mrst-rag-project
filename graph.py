@@ -102,6 +102,7 @@ class State(TypedDict):
     clustering: bool
     github: bool
     chapter_images: bool
+    text_answer: bool
 
 """
 Helper objects
@@ -534,20 +535,25 @@ def GenerateBookNode(state: State) -> State:
         if state.get('chapter_images', True):
             figures.append(generate_book_graph_figure(c, b, sections=s))
 
-    df = df.sort_values(by = 'cosine', ascending=False).head(5)
+    book_response = ""
+    if state.get('text_answer', True):
 
-    context = "\n\n".join(["Section " + sections[i] + " in book: " + book[i] + "\n Title" + titles[i] + "\n Authors: " + ",\t".join(authors[i]) + "\n Content: " + content[i] for i in range(len(df))])
-    msg = [{"role": "system", "content": f"""You are the Generator in a RAG application.
-            You are going to guide the user to which section in the book could be relevant for their question,
-            and state which authors they can reach out to for questions regarding their query.
-            You are going to call the book 'Advanced Book',
-            Do not mention the titles of the chapters.
-            Simply state which researchers work with the relevant subtopics,
-            and therefore who the user should contact.
-            The context is relevant sections in the 'Advanced Book'
-            \n Context:\n {context}"""}, {"role": "user", "content": query}]
+        df = df.sort_values(by = 'cosine', ascending=False).head(5)
 
-    return {"book_response": weak_client.invoke(msg).content.replace(advanced_book, book_to_url.get(advanced_book, "")).replace(introduction_book, book_to_url.get(introduction_book, "")),
+        context = "\n\n".join(["Section " + sections[i] + " in book: " + book[i] + "\n Title" + titles[i] + "\n Authors: " + ",\t".join(authors[i]) + "\n Content: " + content[i] for i in range(len(df))])
+        msg = [{"role": "system", "content": f"""You are the Generator in a RAG application.
+                You are going to guide the user to which section in the book could be relevant for their question,
+                and state which authors they can reach out to for questions regarding their query.
+                You are going to call the book Advanced Book,
+                Do not mention the titles of the chapters.
+                Simply state which researchers work with the relevant subtopics,
+                and therefore who the user should contact.
+                The context is relevant sections in the Advanced Book
+                \n Context:\n {context}"""}, {"role": "user", "content": query}]
+        
+        book_response = weak_client.invoke(msg).content.replace(advanced_book, book_to_url.get(advanced_book, "")).replace(introduction_book, book_to_url.get(introduction_book, ""))
+
+    return {"book_response": book_response,
             "figures": figures,
             "chapter_info": chapter_info}
 
@@ -599,22 +605,25 @@ def GenerateAuthorNode(state: State) -> State:
             chapter_info.append((c,b,rel_authors))
             figures.append(generate_book_graph_figure(c, b, sections=s))
 
-        titles = df['title'].tolist()
-        authors = [", ".join(a) for a in df['authors']]
-        context = "\n\n".join([" title: " + k.strip() + " " + i+"\n Authors: "+j for i,j,k in zip(titles, authors, sec)])
-        msg = [{"role": "system", "content": "You are the Generator in RAG application. "+
-            "You are going to answer the users query, based on the context given. If there are multiple researchers mentioned in the users query, "+
-            "answer the query seperately for each researcher."+
-            "The context given is titles of chapters in the 'Advanced Book', and their respective authors. When mentioning the book write 'Advanced Book' as the name"+
-            "\n Context:\n" + context}, {"role": "user", "content": query}]
-        
-        author_response += "#### MRST Books \n\n"
-        author_response += weak_client.invoke(msg).content
-        author_response += "\n\n"
+        if state.get('text_answer', True):
+
+            titles = df['title'].tolist()
+            authors = [", ".join(a) for a in df['authors']]
+            context = "\n\n".join([" title: " + k.strip() + " " + i+"\n Authors: "+j for i,j,k in zip(titles, authors, sec)])
+            msg = [{"role": "system", "content": "You are the Generator in RAG application. "+
+                "You are going to answer the users query, based on the context given. If there are multiple researchers mentioned in the users query, "+
+                "answer the query seperately for each researcher."+
+                "The context given is titles of chapters in the 'Advanced Book', and their respective authors. When mentioning the book write 'Advanced Book' as the name"+
+                "\n Context:\n" + context}, {"role": "user", "content": query}]
+            
+            author_response += "#### MRST Books \n\n"
+            author_response += weak_client.invoke(msg).content
+            author_response += "\n\n"
 
     df = state.get("relevant_papers_df")
 
-    if len(df) > 5:
+    if len(df) > 5 and state.get('text_answer', True):
+
         titles = df['titles'].tolist()
         authors = [", ".join(a) for a in df['authors']]
         context = "\n\n".join([" title: " + i+"\n Authors: "+j for i,j in zip(titles, authors)])
@@ -628,7 +637,8 @@ def GenerateAuthorNode(state: State) -> State:
         author_response += weak_client.invoke(msg).content
         author_response += "\n\n"
     
-    elif len(df) > 0:
+    elif len(df) > 0 and state.get('text_answer', True):
+
         titles = df['titles'].tolist()
         authors = [", ".join(a) for a in df['authors']]
         abstracts = df['content'].tolist()
@@ -643,7 +653,7 @@ def GenerateAuthorNode(state: State) -> State:
         author_response += weak_client.invoke(msg).content
         author_response += "\n\n"
 
-    if author_response == "":
+    if author_response == "" and state.get('text_answer', True):
         author_response = "Sorry, but I couldn't find any relevant information"
 
     else:
@@ -841,26 +851,30 @@ def SearchAndEvaluateNodeAbstracts(state: State) -> State:
                 c_fig = fig
                 c_name = cluster_names(clustered_df)
 
-                c_to_n = {}
-                for c, n, _ in c_name:
-                    c_to_n[c] = n
+                if state.get('text_answer', True):
 
-                different_clusters = set(clusters)
-                if len(different_clusters) > 3:
-                    paper_response = get_paper_response_if_not_cluster(query = state.get('query'), df=sorted_df.sort_values(by = 'score', ascending = False).head(10))
-                else:
-                    query = state.get('query')
-                    for c in different_clusters:
-                        paper_response += f"#### {c_to_n.get(c)}\n"
-                        paper_response += get_cluster_response(query = query, df = clustered_df[clustered_df['cluster'] == c].sort_values(by = 'score', ascending = False).head(5))
-                        paper_response += "\n\n"
+                    c_to_n = {}
+                    for c, n, _ in c_name:
+                        c_to_n[c] = n
+
+                    different_clusters = set(clusters)
+                    if len(different_clusters) > 3:
+                        paper_response = get_paper_response_if_not_cluster(query = state.get('query'), df=sorted_df.sort_values(by = 'score', ascending = False).head(10))
+                    else:
+                        query = state.get('query')
+                        for c in different_clusters:
+                            paper_response += f"#### {c_to_n.get(c)}\n"
+                            paper_response += get_cluster_response(query = query, df = clustered_df[clustered_df['cluster'] == c].sort_values(by = 'score', ascending = False).head(5))
+                            paper_response += "\n\n"
 
             else:
                 print("Couldn't Cluster")
-                paper_response = get_paper_response_if_not_cluster(query = state.get('query'), df=sorted_df.sort_values(by = 'score', ascending = False).head(10))
+                if state.get('text_answer', True):
+                    paper_response = get_paper_response_if_not_cluster(query = state.get('query'), df=sorted_df.sort_values(by = 'score', ascending = False).head(10))
 
         else:
-            paper_response = get_paper_response_if_not_cluster(query = state.get('query'), df=sorted_df.sort_values(by = 'score', ascending = False).head(10))
+            if state.get('text_answer', True):
+                paper_response = get_paper_response_if_not_cluster(query = state.get('query'), df=sorted_df.sort_values(by = 'score', ascending = False).head(10))
 
         return {"authors_relevance_score": authors_relevance_score, "relevant_papers_df": sorted_df, "c_fig": c_fig, "c_name": c_name, "paper_response": paper_response}
 
