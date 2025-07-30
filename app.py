@@ -214,33 +214,6 @@ with button:
 
 response_area = st.markdown(st.session_state.response)
 
-if bool(st.session_state.figures):
-    st.markdown("### Relevant Textbook Chapters")
-
-for c_info, img in st.session_state.figures:
-    components.html("""
-<div style="
-    padding: 10px;
-    margin-bottom: 20px;
-    background-color: #faf9f7;
-    display: inline-block;
-    box-sizing: border-box;
-    min-height: 100px;
-">
-    <div id="svg-container" style="width: auto; height: auto; overflow: auto;">
-        """ + img + """
-    </div>
-    <script src="https://unpkg.com/@panzoom/panzoom/dist/panzoom.min.js"></script>
-    <script>
-        var elem = document.getElementById('svg-container');
-        var panzoom = Panzoom(elem, { maxScale: 5, minScale: 1});
-        elem.addEventListener('wheel', panzoom.zoomWithWheel);
-    </script>
-</div>
-""", height = 550)
-    
-    st.markdown(f"Map over chapter {c_info[0]} in {c_info[1]} by {", ".join(c_info[2])}. A green node means that I found relevant content in that chapter. You can zoom in by scrolling.")
-
 papers, github, _ = st.columns([6,6,1])
 
 with papers:
@@ -321,3 +294,30 @@ if bool(st.session_state.c_fig):
 
 else:
     create_suggestions()
+
+if bool(st.session_state.figures):
+    st.markdown("### Relevant Textbook Chapters")
+
+for c_info, img in st.session_state.figures:
+    components.html("""
+<div style="
+    padding: 10px;
+    margin-bottom: 20px;
+    background-color: #faf9f7;
+    display: inline-block;
+    box-sizing: border-box;
+    min-height: 100px;
+">
+    <div id="svg-container" style="width: auto; height: auto; overflow: auto;">
+        """ + img + """
+    </div>
+    <script src="https://unpkg.com/@panzoom/panzoom/dist/panzoom.min.js"></script>
+    <script>
+        var elem = document.getElementById('svg-container');
+        var panzoom = Panzoom(elem, { maxScale: 5, minScale: 1});
+        elem.addEventListener('wheel', panzoom.zoomWithWheel);
+    </script>
+</div>
+""", height = 550)
+    
+    st.markdown(f"Map over chapter {c_info[0]} in {c_info[1]} by {", ".join(c_info[2])}. A green node means that I found relevant content in that chapter. You can zoom in by scrolling.")

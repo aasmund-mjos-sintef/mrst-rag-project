@@ -158,8 +158,8 @@ advanced_book = "Advanced Book"
 introduction_book = "Introduction Book"
 
 book_to_url = {
-    advanced_book: "[Advanced Modeling with the MATLAB Reservoir Simulation Toolbox](https://www.cambridge.org/core/services/aop-cambridge-core/content/view/7AC2425C73F6F729DB88DB1A504FA1E7/9781316519967AR.pdf/Advanced_Modeling_with_the_MATLAB_Reservoir_Simulation_Toolbox.pdf?event-type=FTLA)",
-    introduction_book: "[An Introduction to Reservoir Simulation Using MATLAB/GNU Octave](https://www.cambridge.org/core/services/aop-cambridge-core/content/view/F48C3D8C88A3F67E4D97D4E16970F894/9781108492430AR.pdf/An_Introduction_to_Reservoir_Simulation_Using_MATLAB_GNU_Octave.pdf?event-type=FTLA)"
+    advanced_book: "textbook [Advanced Modeling with the MATLAB Reservoir Simulation Toolbox](https://www.cambridge.org/core/services/aop-cambridge-core/content/view/7AC2425C73F6F729DB88DB1A504FA1E7/9781316519967AR.pdf/Advanced_Modeling_with_the_MATLAB_Reservoir_Simulation_Toolbox.pdf?event-type=FTLA)",
+    introduction_book: "textbook [An Introduction to Reservoir Simulation Using MATLAB/GNU Octave](https://www.cambridge.org/core/services/aop-cambridge-core/content/view/F48C3D8C88A3F67E4D97D4E16970F894/9781108492430AR.pdf/An_Introduction_to_Reservoir_Simulation_Using_MATLAB_GNU_Octave.pdf?event-type=FTLA)"
 }
 
 """
@@ -372,7 +372,18 @@ def cluster_names(clustered_df):
 def get_paper_response_if_not_cluster(query, df):
     context = "\n + ""\n\n".join([f" title: {t}\n authors: {", ".join(a)}\n content: {c}" for t,a,c in zip(df['titles'], df['authors'], df['content'])])
     msg = [{"role": "system", "content": f"""
-            You are going to guide the user to the authors best suited to help with their problem. Do not try and solve the users problem.
+            You are going to guide the user to the authors best suited to help with their problem.
+            State who is relevant to contact about different subtopics presented in the context related to the users query.
+            Do not try and solve the users problem.
+            Context:{context}"""}, {"role":"user", "content": query}]
+    return weak_client.invoke(msg).content
+
+def get_cluster_response(query, df):
+    context = "\n + ""\n\n".join([f" title: {t}\n authors: {", ".join(a)}\n content: {c}" for t,a,c in zip(df['titles'], df['authors'], df['content'])])
+    msg = [{"role": "system", "content": f"""
+            You are going to guide the user to the authors best suited to help with their problem.
+            State who is relevant to contact about different subtopics presented in the context related to the users query.
+            Do not try and solve the users problem. Your answer should be a short paragraph.
             Context:{context}"""}, {"role":"user", "content": query}]
     return weak_client.invoke(msg).content
 
@@ -382,6 +393,8 @@ Nodes
 
 def InformationNode(state: State) -> State:
     query = state.get("query")
+
+    print("--Information Node--")
 
     msg = [('system', f"""
     You are an assistant for the Matlab Reservoir Toolbox developed by SINTEF.
@@ -467,6 +480,9 @@ def SearchMRSTModulesNode(state: State) -> State:
     return {"tools_calls": [web_search_mrst.invoke(input = link)], "visited_link": link}
 
 def RetrieveNode(state: State) -> State:
+
+    print("--Retrieve Node--")
+
     df = pd.read_pickle('datasets/book_embeddings.pkl')
     df = df[df['file_type'].isin(['Advanced Book'])]
     query_description = state.get('query_description')
@@ -489,6 +505,9 @@ def RetrieveNode(state: State) -> State:
     return {"book_df": book_df, "book_relevance_score": book_relevance_score}
 
 def GenerateBookNode(state: State) -> State:
+
+    print("--Generate Book Node--")
+
     query = state.get('query')
     df = state.get("book_df")
 
@@ -533,6 +552,9 @@ def GenerateBookNode(state: State) -> State:
             "chapter_info": chapter_info}
 
 def RetrieveAuthorNode(state: State) -> State:
+
+    print("--Retrieve Author Node--")
+
     df = pd.read_pickle('datasets/book_embeddings.pkl')
     df = df[df['file_type'].isin(['Advanced Book'])]
     authors_names = state.get('query_description').authors
@@ -544,6 +566,9 @@ def RetrieveAuthorNode(state: State) -> State:
     return {"book_df": book_df, "relevant_papers_df": relevant_papers_df}
 
 def GenerateAuthorNode(state: State) -> State:
+
+    print("--Generate Author Node--")
+
     df = state.get("book_df")
     query = state.get("query")
 
@@ -625,6 +650,9 @@ def GenerateAuthorNode(state: State) -> State:
         return {"author_response": author_response.replace(advanced_book, book_to_url.get(advanced_book, "")).replace(introduction_book, book_to_url.get(introduction_book, "")), "figures": figures, "chapter_info": chapter_info}
 
 def SearchAndEvaluateNode(state: State) -> State:
+
+    print("--Search and Evaluate Node--")
+
     df = pd.read_pickle('datasets/folk_ntnu_embeddings.pkl')
     query_description = state.get('query_description')
     vector = vector_embedding_model.encode(query_description.keywords + [query_description.problem_description])
@@ -718,6 +746,9 @@ def SearchAndEvaluateNode(state: State) -> State:
         return{}
 
 def SearchAndEvaluateNodeAbstracts(state: State) -> State:
+
+    print("--Search and Evaluate Node Abstracts--")
+
     df = pd.read_pickle('datasets/mrst_abstracts_embedding.pkl')
     query_description = state.get('query_description')
 
@@ -732,7 +763,7 @@ def SearchAndEvaluateNodeAbstracts(state: State) -> State:
     vec_prod = np.einsum('i,k->ki',np.linalg.norm(vector, axis = -1),np.linalg.norm(embeddings, axis = -1))
     cosines = dot_prod/vec_prod
     df['cosine'] = np.max(cosines, axis = -1)
-    threshold = min([0.5, np.max(cosines)-0.15])
+    threshold = min([0.5, np.max(cosines)-0.2])
 
     print("Threshold set to: ", threshold)
 
@@ -753,6 +784,7 @@ def SearchAndEvaluateNodeAbstracts(state: State) -> State:
         cosines = dot_prod/vec_prod
 
         sorted_df['avg_high_cosine'] = np.mean(np.max(cosines, axis = -1), axis = -1)
+        sorted_df['score'] = [c + a_h_c for c, a_h_c in zip(sorted_df['cosine'], sorted_df['avg_high_cosine'])]
 
         authors_abstract_score  = {}
         authors_n_rel_abstracts = {}
@@ -765,7 +797,7 @@ def SearchAndEvaluateNodeAbstracts(state: State) -> State:
             for a in authors:
                 authors_total_n_papers[a] = authors_total_n_papers.get(a, 0) + 1
 
-        for authors, score in zip(sorted_df['authors'], sorted_df['avg_high_cosine']):
+        for authors, score in zip(sorted_df['authors'], sorted_df['score']):
             for a in authors:
                 authors_set.add(a)
                 authors_abstract_score[a] = authors_abstract_score.get(a, 0) + (1+score)**2-1
@@ -808,12 +840,27 @@ def SearchAndEvaluateNodeAbstracts(state: State) -> State:
                 ax.set_axis_off()
                 c_fig = fig
                 c_name = cluster_names(clustered_df)
+
+                c_to_n = {}
+                for c, n, _ in c_name:
+                    c_to_n[c] = n
+
+                different_clusters = set(clusters)
+                if len(different_clusters) > 3:
+                    paper_response = get_paper_response_if_not_cluster(query = state.get('query'), df=sorted_df.sort_values(by = 'score', ascending = False).head(10))
+                else:
+                    query = state.get('query')
+                    for c in different_clusters:
+                        paper_response += f"#### {c_to_n.get(c)}\n"
+                        paper_response += get_cluster_response(query = query, df = clustered_df[clustered_df['cluster'] == c].sort_values(by = 'score', ascending = False).head(5))
+                        paper_response += "\n\n"
+
             else:
                 print("Couldn't Cluster")
-                paper_response = get_paper_response_if_not_cluster(query = state.get('query'), df=sorted_df.sort_values(by = 'avg_high_cosine', ascending = False).head(10))
+                paper_response = get_paper_response_if_not_cluster(query = state.get('query'), df=sorted_df.sort_values(by = 'score', ascending = False).head(10))
 
         else:
-            paper_response = get_paper_response_if_not_cluster(query = state.get('query'), df=sorted_df.sort_values(by = 'avg_high_cosine', ascending = False).head(10))
+            paper_response = get_paper_response_if_not_cluster(query = state.get('query'), df=sorted_df.sort_values(by = 'score', ascending = False).head(10))
 
         return {"authors_relevance_score": authors_relevance_score, "relevant_papers_df": sorted_df, "c_fig": c_fig, "c_name": c_name, "paper_response": paper_response}
 
@@ -821,6 +868,9 @@ def SearchAndEvaluateNodeAbstracts(state: State) -> State:
         return {}
 
 def GitNode(state: State) -> State:
+
+    print("--Git Node--")
+
     query = state.get('query')
     code_query = state.get('code_query')
     prompt = [{"role": "system", "content": "You are going to extract a maximum of 10 code keywords related to the problem the user has based on the provided code and problem"},{"role":"user", "content": "problem:\n " + query + "\n\ncode:\n" + code_query}]
@@ -853,6 +903,9 @@ def GitNode(state: State) -> State:
     return {"code_df": sorted_df, "coding_keywords": coding_keywords, "github_authors_relevance_score": total_freq_dict}
 
 def SuggestionsNode(state: State) -> State:
+
+    print("--Suggestions Node--")
+
     chapter_info = state.get('chapter_info')
     suggestions = set()
     if chapter_info != None:
@@ -878,8 +931,8 @@ def SuggestionsNode(state: State) -> State:
     
     msg = [{"role": "system", "content": f"""You are a next query suggestion maker tool in the Matlab Reservoir Simulation Toolbox competence query developed by SINTEF.
             The users query has been used to generate answers, which is the context provided.
-            Based only on the provided context, generate a list of of subtopics for further simulations
-            Create a maximum of 7 such suggestions. 
+            Based only on the provided context, generate a list of of subtopics for further simulations.
+            Create a maximum of 7 such suggestions. Each suggestion can maximum be 7 words.
             Context: {total_context}"""}, {"role": "user", "content": state.get('query')}]
     
     query_suggestions = set(weak_client.with_structured_output(QuerySuggestions).invoke(msg).suggestions)
