@@ -1,3 +1,6 @@
+print("Loading graph.py...")
+print("Importing libraries...")
+
 from langchain_openai import ChatOpenAI
 from langgraph.graph import StateGraph, START, END
 from pydantic import BaseModel, Field
@@ -6,18 +9,23 @@ from typing import List, Literal
 from sentence_transformers import SentenceTransformer
 import numpy as np
 import pandas as pd
-import networkx as nx
 import matplotlib.pyplot as plt
+from networkx import DiGraph
+from networkx import draw as nx_draw
+from networkx.drawing.nx_agraph import to_agraph
 from matplotlib.figure import Figure
 from tools.sintef_search_tool import web_search_mrst
 from langgraph.prebuilt import create_react_agent
+from langchain.agents import create_openai_functions_agent
 from collections import Counter
 from classes.GitAgent import GitAgent
-import hdbscan
-import umap
+from hdbscan import HDBSCAN
+from umap import UMAP
 
+import warnings
+warnings.filterwarnings('ignore')
 
-import re
+from re import findall
 from nltk.corpus import stopwords
 from nltk import download as nltk_download
 nltk_download('stopwords', quiet=True)
@@ -29,30 +37,14 @@ load_dotenv()
 openai_api_key = os.getenv("OPENAI_API_KEY")
 langchain_openai_api_key = os.getenv("LANGCHAIN_OPENAI_API_KEY")
 
-tools = [web_search_mrst]
-
-strong_client = ChatOpenAI(model="gpt-4o-mini", temperature=0.0, openai_api_key=langchain_openai_api_key)
-beast_client = ChatOpenAI(model="gpt-4", temperature=0.0, openai_api_key=langchain_openai_api_key)
-tools_agent = create_react_agent(strong_client, tools)
-weak_client = ChatOpenAI(model="gpt-3.5-turbo", temperature=0.0, openai_api_key = langchain_openai_api_key)
-
-vector_embedding_model = SentenceTransformer('sentence-transformers/all-mpnet-base-v2')
-
 """
 Helper classes -- Called with client.with_structured_output(ClassName)
 """
 
-class QueryDescriptionWithTools(BaseModel):
-    keywords: List[str] = Field(description = "Keywords related to the users query")
-    authors: List[str] = Field(description = "The authors mentioned in the users query")
-    problem_description: str = Field(description = "The users problem compacted into one sentence")
-    tools: bool = Field(description = "Wether or not should call tools")
-    tools_input: str = Field(description = "The input to the tool")
-
 class QueryDescription(BaseModel):
     keywords: List[str] = Field(description = "Keywords related to the users query")
-    authors: List[str] = Field(description = "The authors mentioned in the users query")
     problem_description: str = Field(description = "The users problem compacted into one sentence")
+    authors: List[str] = Field(description = "The authors mentioned in the users query")
 
 class CodingKeyWords(BaseModel):
     keywords: List[str] = Field(description = "Key code object names or code words/functions etc based on the provided code.")
@@ -70,6 +62,18 @@ class ClusterDescription(BaseModel):
 class QuerySuggestions(BaseModel):
     suggestions: List[str] = Field(description = "List of possible suggestions for further queries")
 
+tools = [web_search_mrst]
+
+print("Initializing AI clients and vector embedding model...")
+
+nano_client = ChatOpenAI(model="gpt-4.1-nano", temperature=0.0, openai_api_key=langchain_openai_api_key)
+mini_client = ChatOpenAI(model="gpt-4.1-mini", temperature=0.0, openai_api_key=langchain_openai_api_key)
+tool_client = ChatOpenAI(model="gpt-4o-mini", temperature=0.0, openai_api_key=langchain_openai_api_key)
+tool_agent = create_react_agent(model = tool_client, tools = tools, response_format = QueryDescription)
+vector_embedding_model = SentenceTransformer('sentence-transformers/all-mpnet-base-v2')
+
+print("Initializing Graph...")
+
 """
 State
 """
@@ -79,7 +83,7 @@ class State(TypedDict):
     query: str
     code_query: str
     coding_keywords: List[str]
-    query_description : QueryDescriptionWithTools
+    query_description : QueryDescription
     book_df: pd.DataFrame
     code_df: pd.DataFrame
     relevant_papers_df: pd.DataFrame
@@ -218,7 +222,7 @@ def font_size(n):
     
 def get_bigram_freq(text):
 
-    words = re.findall(r'\w+', text.lower()) 
+    words = findall(r'\w+', text.lower()) 
     words = [word for word in words if word not in stop_words and len(word) > 2]
 
     bigrams = zip(words, words[1:])
@@ -243,7 +247,7 @@ def generate_book_graph_figure(chapter: int, book: str, sections: set[tuple[int,
     titles = [s[i] +": "+ t[i] for i in range(len(df))]
     first = df['1'].tolist()
     second = df['2'].tolist()
-    G = nx.DiGraph()
+    G = DiGraph()
     G.add_nodes_from([new_title(t) for t in titles])
     for i in range(len(df)):
         if second[i] != 0:
@@ -265,11 +269,11 @@ def generate_book_graph_figure(chapter: int, book: str, sections: set[tuple[int,
     node_colors = []
     for i in range(len(df)):
         if (chapter, first[i], second[i]) in sections:
-            node_colors.append("green")
+            node_colors.append("#ff7f7f7")  # Light gray for sections
         else:
             node_colors.append("lightblue")
 
-    A = nx.nx_agraph.to_agraph(G)
+    A = to_agraph(G)
 
     for i, n in enumerate(G.nodes()):
         r = np.sqrt(node_sizes[i]/100)
@@ -289,7 +293,7 @@ def generate_book_graph_figure(chapter: int, book: str, sections: set[tuple[int,
     fig, ax = plt.subplots(figsize=(15, 6))
     fig.set_facecolor('#faf9f7')
     ax.set_facecolor('#faf9f7')
-    nx.draw(G, pos, with_labels=False, node_size=node_sizes, node_color=node_colors, ax=ax)
+    nx_draw(G, pos, with_labels=False, node_size=node_sizes, node_color=node_colors, ax=ax)
     for i, (n, (x, y)) in enumerate(pos.items()):
         if first[i] == 0 and second[i] == 0:
             ax.text(x, y, n, fontsize=font_sizes[i], ha='center', va='center')
@@ -316,7 +320,7 @@ def umap_reduce(filtered_df):
     """
 
     try:
-        umap_reducer = umap.UMAP(n_neighbors=10, min_dist=0, n_components=50, random_state=42)
+        umap_reducer = UMAP(n_neighbors=10, min_dist=0, n_components=50, random_state=42)
         umap_embeddings = umap_reducer.fit_transform(filtered_df['embedding'].tolist())
         filtered_df['embedding_umap'] = list(umap_embeddings)
         return filtered_df
@@ -339,7 +343,7 @@ def hdbscan_cluster(reduced_df):
         min_cluster_size = int(len(reduced_df) / 10)+1
 
     embeddings = reduced_df['embedding_umap'].tolist()
-    clusterer = hdbscan.HDBSCAN(min_cluster_size=min_cluster_size,
+    clusterer = HDBSCAN(min_cluster_size=min_cluster_size,
                                     min_samples=5,
                                     cluster_selection_epsilon=0.6,
                                     metric='euclidean', 
@@ -365,7 +369,7 @@ def cluster_names(clustered_df):
             identified by the following top bigrams, so a total of {n}. Your mission is to create names and descriptions that help highlight the differences between the clusters.
             
             -{"\n\n-".join(top_words)}"""}]
-    cluster_description = weak_client.with_structured_output(ClusterDescription).invoke(msg)
+    cluster_description = nano_client.with_structured_output(ClusterDescription).invoke(msg)
     name = cluster_description.name
     description = cluster_description.description
     return list(zip(different_clusters, name, description))
@@ -377,7 +381,7 @@ def get_paper_response_if_not_cluster(query, df):
             State who is relevant to contact about different subtopics presented in the context related to the users query.
             Do not try and solve the users problem.
             Context:{context}"""}, {"role":"user", "content": query}]
-    return weak_client.invoke(msg).content
+    return nano_client.invoke(msg).content
 
 def get_cluster_response(query, df):
     context = "\n + ""\n\n".join([f" title: {t}\n authors: {", ".join(a)}\n content: {c}" for t,a,c in zip(df['titles'], df['authors'], df['content'])])
@@ -386,7 +390,7 @@ def get_cluster_response(query, df):
             State who is relevant to contact about different subtopics presented in the context related to the users query.
             Do not try and solve the users problem. Your answer should be a short paragraph.
             Context:{context}"""}, {"role":"user", "content": query}]
-    return weak_client.invoke(msg).content
+    return nano_client.invoke(msg).content
 
 """
 Nodes
@@ -410,13 +414,9 @@ def InformationNode(state: State) -> State:
         - chemical enhanced oil recovery
         - polymer flooding
             
-    Format the output as such:
-    {{
-        keywords: [<list_of_keywords>],
-        problem_description: <problem_description>
-    }}
-            
-    You can use the tool 'web_search_mrst' tp get content and further links from the mrst webpage.
+    The problem description should be a short sentence describing the users problem.
+    You can use the tool 'web_search_mrst' to get relevant content about mrst modules,
+    and further links from the mrst webpage.
     Only use the tool if you're sure the link is relevant.
     Here's a list of possible start links, if you are going to use the tool, choose the most relevant one:
 
@@ -425,26 +425,15 @@ def InformationNode(state: State) -> State:
     """),
     ("user", query)]
 
-    response = tools_agent.invoke({"messages": msg})
-    answer = response['messages'][-1].content
+    query_description = tool_agent.invoke({"messages": msg}).get('structured_response')
 
-    k = 'keywords: '
-    p = 'problem_description: '
+    problem_description = query_description.problem_description
+    keywords = query_description.keywords
 
-    keywords_index = answer.find(k)
-    problem_index = answer.find(p)
-
-    keywords_split = answer[keywords_index + len(k):problem_index]
-    problem_split = answer[problem_index + len(p):]
-
-    keywords = [i for i in split_by_more(keywords_split, ['[',']','"',',']) if i.strip()][:-1]
-    problem_description = [i for i in split_by_more(problem_split, ['"']) if i.strip()][0]
-
-    authors = strong_client.with_structured_output(Authors).invoke([{"role": "system", "content": "You are going to extract specific SINTEF researchers from a users query. In other words, only return a list if there is a human name in the query"}, {"role": "user", "content": query}]).authors
-
+    authors = nano_client.with_structured_output(Authors).invoke([{"role": "system", "content": "You are going to extract specific SINTEF researchers from a users query. In other words, only return a list if there is a human name in the query"}, {"role": "user", "content": query}]).authors
     authors = [a for a in authors if "sintef" not in a.lower()]
 
-    expensive = False
+    expensive = True
     if expensive == True:
         if len(query) < 500:    # Since we use an expensive model, we only allow smaller prompts into the llm
 
@@ -455,8 +444,9 @@ def InformationNode(state: State) -> State:
 
             n = len(keywords)
 
-            sys_msg = f"""You are going to determine how specific these keywords are related to the field of reservoir simulation in relation to the users query.
-            For example, keywords like 'reservoir simulation', 'numerical mathematics' should always have a low score like 1 or 2, since they are very general. 
+            sys_msg = f"""You are going to determine how specific these keywords are.
+            The keywords are all related to the scientific field of reservoir simulation.
+            For example, keywords like 'reservoir simulation', 'numerical mathematics' should always have a low score like 1 or 2, since they are very general in this field. 
             For example, a keyword like 'chemical enhanced oil recovery' should be very high if the query is 'What can you tell me about chemical eor'
             Generate scores for all keywords, so a total of {n}.
             Query:\n{query}
@@ -468,12 +458,17 @@ def InformationNode(state: State) -> State:
             i = 0
             while len(specific_score) != n and i<3:
                 i+=1
-                specific_score = beast_client.with_structured_output(SpecificScore).invoke([{"role": "system", "content": sys_msg}]).specific_scores
+                specific_score = mini_client.with_structured_output(SpecificScore).invoke([{"role": "system", "content": sys_msg}]).specific_scores
 
             if i < 3:
                 keywords = [keywords[j] for j in range(n) if specific_score[j]>6]
 
-    query_description = QueryDescriptionWithTools(keywords=keywords, problem_description=problem_description, authors=authors, tools=False, tools_input="")
+    query_description = QueryDescription(
+        keywords=keywords,
+        problem_description=problem_description,
+        authors=authors
+    )
+
     return {"query_description": query_description}
 
 def SearchMRSTModulesNode(state: State) -> State:
@@ -551,7 +546,7 @@ def GenerateBookNode(state: State) -> State:
                 The context is relevant sections in the Advanced Book
                 \n Context:\n {context}"""}, {"role": "user", "content": query}]
         
-        book_response = weak_client.invoke(msg).content.replace(advanced_book, book_to_url.get(advanced_book, "")).replace(introduction_book, book_to_url.get(introduction_book, ""))
+        book_response = nano_client.invoke(msg).content.replace(advanced_book, book_to_url.get(advanced_book, "")).replace(introduction_book, book_to_url.get(introduction_book, ""))
 
     return {"book_response": book_response,
             "figures": figures,
@@ -617,7 +612,7 @@ def GenerateAuthorNode(state: State) -> State:
                 "\n Context:\n" + context}, {"role": "user", "content": query}]
             
             author_response += "#### MRST Books \n\n"
-            author_response += weak_client.invoke(msg).content
+            author_response += nano_client.invoke(msg).content
             author_response += "\n\n"
 
     df = state.get("relevant_papers_df")
@@ -634,7 +629,7 @@ def GenerateAuthorNode(state: State) -> State:
             "\n Context:\n" + context}, {"role": "user", "content": query}]
         
         author_response += "#### MRST Papers \n\n"
-        author_response += weak_client.invoke(msg).content
+        author_response += nano_client.invoke(msg).content
         author_response += "\n\n"
     
     elif len(df) > 0 and state.get('text_answer', True):
@@ -650,7 +645,7 @@ def GenerateAuthorNode(state: State) -> State:
             "\n Context:\n" + context}, {"role": "user", "content": query}]
         
         author_response += "#### MRST Papers \n\n"
-        author_response += weak_client.invoke(msg).content
+        author_response += nano_client.invoke(msg).content
         author_response += "\n\n"
 
     if author_response == "" and state.get('text_answer', True):
@@ -842,7 +837,7 @@ def SearchAndEvaluateNodeAbstracts(state: State) -> State:
                 ax.set_facecolor('#faf9f7')
                 clusters = clustered_df['cluster'].tolist()
 
-                for_visual_umap_reducer = umap.UMAP(n_neighbors=15, min_dist=0.1,  metric='euclidean', n_components=2, random_state=42)
+                for_visual_umap_reducer = UMAP(n_neighbors=15, min_dist=0.1,  metric='euclidean', n_components=2, random_state=42)
                 umap_embeddings = for_visual_umap_reducer.fit_transform(embeddings_768)
                 x_umap = [embd[0] for embd in umap_embeddings]
                 y_umap = [embd[1] for embd in umap_embeddings]
@@ -888,7 +883,7 @@ def GitNode(state: State) -> State:
     query = state.get('query')
     code_query = state.get('code_query')
     prompt = [{"role": "system", "content": "You are going to extract a maximum of 10 code keywords related to the problem the user has based on the provided code and problem"},{"role":"user", "content": "problem:\n " + query + "\n\ncode:\n" + code_query}]
-    coding_keywords = strong_client.with_structured_output(CodingKeyWords).invoke(prompt).keywords
+    coding_keywords = nano_client.with_structured_output(CodingKeyWords).invoke(prompt).keywords
     code_search = coding_keywords
     code_search_embeddings = np.array(vector_embedding_model.encode(code_search))
     df = pd.read_pickle("datasets/mrst_repository_embeddings.pkl")
@@ -949,7 +944,7 @@ def SuggestionsNode(state: State) -> State:
             Create a maximum of 7 such suggestions. Each suggestion can maximum be 7 words.
             Context: {total_context}"""}, {"role": "user", "content": state.get('query')}]
     
-    query_suggestions = set(weak_client.with_structured_output(QuerySuggestions).invoke(msg).suggestions)
+    query_suggestions = set(nano_client.with_structured_output(QuerySuggestions).invoke(msg).suggestions)
 
     kappa = 0.7
 
@@ -990,9 +985,6 @@ def StartNodeRouter(state: State) -> Literal["InformationNode", "RetrieveAuthorN
 
 def RetrievalRouter(state: State) -> Literal["SearchMRSTModulesNode","RetrieveNode","RetrieveAuthorNode"]:
     queryDescription = state.get('query_description')
-    if queryDescription.tools:
-        return "SearchMRSTModulesNode"
-
     if queryDescription.authors:
         return "RetrieveAuthorNode"
     else:
@@ -1048,3 +1040,5 @@ graph_builder.add_edge("SuggestionsNode", END)
 
 graph = graph_builder.compile()
 graph.get_graph().draw_mermaid_png(output_file_path='graph_vizualization.png')
+
+print("Graph has been built and vizualization saved as 'graph_vizualization.png'")

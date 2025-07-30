@@ -56,9 +56,9 @@ st.markdown("#### Hi, I am an assistant made by SINTEF for the Matlab Reservoir 
 
 query, code_query, button = st.columns([6,6,1])
 with query:
-    query = st.text_area(label = "Query",value = st.session_state.query, key = "query", height = 300, label_visibility="hidden", placeholder="Please write down any problems you might have")
+    query = st.text_area(label = "Query", key = "query", height = 300, label_visibility="hidden", placeholder="Please write down any problems you might have")
 with code_query:
-    code_query = st.text_area(label = "Code Query",value = st.session_state.code_query, key = "code_query", height = 300, label_visibility="hidden", placeholder="Please write down any matlab code for context")
+    code_query = st.text_area(label = "Code Query", key = "code_query", height = 300, label_visibility="hidden", placeholder="Please write down any matlab code for context")
 
 from graph import *
 import io
@@ -81,6 +81,10 @@ def run_graph(state: State = None):
         
         else:
             return
+        
+    else:
+        st.session_state.query = state.get('query')
+        st.session_state.code_query = state.get('code_query')
 
     state = graph.invoke(state)
 
@@ -161,12 +165,10 @@ def author_pills_callback():
         state = State(
             query = f"Give me a brief summary of what work {st.session_state.get('auto_author')} does",
             code_query= "",
-            query_description = QueryDescriptionWithTools(
+            query_description = QueryDescription(
                 keywords = [],
                 authors=[st.session_state.get('auto_author')],
-                problem_description="",
-                tools=False,
-                tools_input=""),
+                problem_description=""),
             start_node="RetrieveAuthorNode",
             clustering=st.session_state.clustering,
             github=st.session_state.github,
@@ -187,16 +189,7 @@ def query_pills_callback():
         run_graph(state)
 
 def create_suggestions():
-    if len(st.session_state.suggestions):
-        st.markdown('#### Suggested Authors')
-        st.pills(label = 'Find out more about the authors',
-                 options = st.session_state.suggestions,
-                 default = None,
-                 selection_mode="single",
-                 label_visibility='hidden',
-                 key = 'auto_author',
-                 on_change=author_pills_callback)
-    
+
     if len(st.session_state.query_suggestions):
         st.markdown('#### Query Suggestions')
         st.pills(label = 'Find out more about these topics',
@@ -207,6 +200,15 @@ def create_suggestions():
                  key = 'auto_query',
                  on_change=query_pills_callback)
 
+    if len(st.session_state.suggestions):
+        st.markdown('#### Suggested Authors')
+        st.pills(label = 'Find out more about the authors',
+                 options = st.session_state.suggestions,
+                 default = None,
+                 selection_mode="single",
+                 label_visibility='hidden',
+                 key = 'auto_author',
+                 on_change=author_pills_callback)
 
 with button:
     st.button(label = "Generate", on_click=run_graph, type = "primary")
@@ -217,6 +219,9 @@ with button:
     st.checkbox(label = "Git Hub", key = "github", value=False, help="If you want to retrieve relevant github commits in the MRST repository, check this box. This will take a bit longer to run.")
 
 response_area = st.markdown(st.session_state.response)
+
+if st.session_state.response:
+    st.divider()
 
 papers, github, _ = st.columns([6,6,1])
 
@@ -244,7 +249,8 @@ with github:
         with score_box:
             st.markdown(f'With :orange[{str(s)}] commits in retrieved folders')
 
-st.divider()
+if len(st.session_state.authors):
+    st.divider()
 
 if bool(st.session_state.c_fig):
 
@@ -296,11 +302,11 @@ if bool(st.session_state.c_fig):
 
     with suggestion_box:
         create_suggestions()
-
 else:
     create_suggestions()
 
 if bool(st.session_state.figures):
+    st.divider()
     st.markdown("### Relevant Textbook Chapters")
 
 for c_info, img in st.session_state.figures:
