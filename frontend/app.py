@@ -87,6 +87,7 @@ def run_graph(state: graph.State = None):
         st.session_state.code_query = state.get('code_query')
 
     state = graph.invoke_graph(state)
+    print("Graph Excecuted successfully!\n")
 
     st.session_state.suggestions = state.get('suggestions')
     st.session_state.query_suggestions = state.get('query_suggestions')

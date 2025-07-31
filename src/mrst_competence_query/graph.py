@@ -928,11 +928,11 @@ graph_builder.add_edge("SuggestionsNode", END)
 program = graph_builder.compile()
 
 def invoke_graph(state: State):
+    print("Invoking Graph!")
     return program.invoke(state)
+    
 
 def get_graph_vizualization():
-    print("Invoking Graph!")
     program.get_graph().draw_mermaid_png(output_file_path='graph_vizualization.png')
-    print("Graph Done! \n")
 
 print("Graph has successfully been built, and is ready for use\n")
