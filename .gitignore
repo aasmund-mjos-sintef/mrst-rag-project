@@ -208,3 +208,6 @@ __marimo__/
 
 # mrst-repository
 mrst_cloned/
+
+# test jupyter notebook
+test.ipynb

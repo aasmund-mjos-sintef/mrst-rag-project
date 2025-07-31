@@ -70,6 +70,8 @@ mini_client = ChatOpenAI(model="gpt-4.1-mini", temperature=0.0, openai_api_key=l
 tool_client = ChatOpenAI(model="gpt-4o-mini", temperature=0.0, openai_api_key=langchain_openai_api_key)
 tool_agent = create_react_agent(model = tool_client, tools = tools, response_format = QueryDescription)
 vector_embedding_model = SentenceTransformer('sentence-transformers/all-mpnet-base-v2')
+specter_embedding_model = SentenceTransformer("allenai-specter")
+specter = False
 
 print("Initializing Graph...")
 
@@ -660,23 +662,44 @@ def SearchAndEvaluateNode(state: State) -> State:
 
     print("--Search and Evaluate Node Abstracts--")
 
-    df = load_dataframe('mrst_abstracts_embedding.pkl')
-    query_description = state.get('query_description')
+    if specter:
 
-    keywords = query_description.keywords
-    keywords = keywords if len(keywords) else [query_description.problem_description]
-    keyword_embeddings = vector_embedding_model.encode(keywords)
+        df = load_dataframe('mrst_abstracts_embedding_specter.pkl')
+        query_description = state.get('query_description')
 
-    vector = vector_embedding_model.encode(query_description.keywords + [query_description.problem_description])
+        keywords = query_description.keywords
+        keywords = keywords if len(keywords) else [query_description.problem_description]
+        keyword_embeddings = vector_embedding_model.encode(keywords)
 
-    embeddings = np.array(df['embedding'].tolist())
-    dot_prod = np.einsum('ij,kj->ki', vector, embeddings)
-    vec_prod = np.einsum('i,k->ki',np.linalg.norm(vector, axis = -1),np.linalg.norm(embeddings, axis = -1))
-    cosines = dot_prod/vec_prod
-    df['cosine'] = np.max(cosines, axis = -1)
-    threshold = min([0.5, np.max(cosines)-0.2])
+        vector = np.array(specter_embedding_model.encode(query_description.keywords + [query_description.problem_description]))
 
-    sorted_df = df[df['cosine'] > threshold]
+        embeddings = np.array(df['embedding'].tolist())
+        dot_prod = np.einsum('ij,kj->ki', vector, embeddings)
+        vec_prod = np.einsum('i,k->ki',np.linalg.norm(vector, axis = -1),np.linalg.norm(embeddings, axis = -1))
+        cosines = dot_prod/vec_prod
+        df['cosine'] = np.max(cosines, axis = -1)
+
+        threshold = np.max(cosines)-0.07
+        sorted_df = df[df['cosine'] > threshold]
+    
+    else:
+        df = load_dataframe('mrst_abstracts_embedding.pkl')
+        query_description = state.get('query_description')
+
+        keywords = query_description.keywords
+        keywords = keywords if len(keywords) else [query_description.problem_description]
+        keyword_embeddings = vector_embedding_model.encode(keywords)
+
+        vector = vector_embedding_model.encode(query_description.keywords + [query_description.problem_description])
+
+        embeddings = np.array(df['embedding'].tolist())
+        dot_prod = np.einsum('ij,kj->ki', vector, embeddings)
+        vec_prod = np.einsum('i,k->ki',np.linalg.norm(vector, axis = -1),np.linalg.norm(embeddings, axis = -1))
+        cosines = dot_prod/vec_prod
+        df['cosine'] = np.max(cosines, axis = -1)
+        threshold = min([0.5, np.max(cosines)-0.2])
+
+        sorted_df = df[df['cosine'] > threshold]
 
     if len(sorted_df) > 0:
 
