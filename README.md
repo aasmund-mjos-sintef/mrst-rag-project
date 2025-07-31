@@ -7,12 +7,17 @@ database of papers and documentation.
 ## Getting started
 
 Create a .env file in the main directory and enter
-```OPENAI_API_KEY = <your_api_key>``` and
 ```LANGCHAIN_OPENAI_API_KEY = <your_api_key>```
-to send api-requests to openai and langchain openai. 
+```MRST_REPOSITORY_PATH = <full_path_to_downloaded_mrst_repository>```
+
+It's important to download the original MRST repository if you want to use the github search.
+If you don't download the original MRST repository, you will get an error if you include github search in the settings.
 
 Create a virtual environment and make sure to run
 ```pip install -r requirements.txt```
+
+Prepare the source code package by running
+```pip install -e .```
 
 To run the program, navigate to the frontend folder and enter
 ```streamlit run app.py```
