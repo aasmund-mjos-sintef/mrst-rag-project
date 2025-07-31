@@ -14,4 +14,5 @@ to send api-requests to openai and langchain openai.
 Create a virtual environment and make sure to run
 ```pip install -r requirements.txt```
 
-How to prepare the dataset is tbd
+To run the program, navigate to the frontend folder and enter
+```streamlit run app.py```
