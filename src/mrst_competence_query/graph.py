@@ -871,8 +871,6 @@ def SuggestionsNode(state: State) -> State:
         for author in b_r.keys():
             relevance_score[author] = relevance_score.get(author, 0) + b_r.get(author, 0)
 
-    print("Graph Done! \n")
-
     return {"suggestions": suggestions, "query_suggestions": query_suggestions, "relevance_score": relevance_score}
 
 """
@@ -933,6 +931,8 @@ def invoke_graph(state: State):
     return program.invoke(state)
 
 def get_graph_vizualization():
+    print("Invoking Graph!")
     program.get_graph().draw_mermaid_png(output_file_path='graph_vizualization.png')
+    print("Graph Done! \n")
 
 print("Graph has successfully been built, and is ready for use\n")

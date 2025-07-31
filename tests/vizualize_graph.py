@@ -1,5 +1,8 @@
-from mrst_competence_query import graph
+def test_vizualization():
+    from mrst_competence_query import graph
 
-graph.get_graph_vizualization()
+    graph.get_graph_vizualization()
 
-print("Vizualization saved as 'graph_vizualization.png'")
+    print("Vizualization saved as 'graph_vizualization.png'")
+
+test_vizualization()
