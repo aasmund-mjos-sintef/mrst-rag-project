@@ -269,7 +269,7 @@ def generate_book_graph_figure(chapter: int, book: str, sections: set[tuple[int,
     node_colors = []
     for i in range(len(df)):
         if (chapter, first[i], second[i]) in sections:
-            node_colors.append("#ff7f7f7")  # Light gray for sections
+            node_colors.append("green")
         else:
             node_colors.append("lightblue")
 
@@ -475,9 +475,9 @@ def SearchMRSTModulesNode(state: State) -> State:
     link = state.get('query_description').tools_input
     return {"tools_calls": [web_search_mrst.invoke(input = link)], "visited_link": link}
 
-def RetrieveNode(state: State) -> State:
+def RetrieveBookNode(state: State) -> State:
 
-    print("--Retrieve Node--")
+    print("--Retrieve Book Node--")
 
     df = pd.read_pickle('datasets/book_embeddings.pkl')
     df = df[df['file_type'].isin(['Advanced Book'])]
@@ -655,102 +655,6 @@ def GenerateAuthorNode(state: State) -> State:
         return {"author_response": author_response.replace(advanced_book, book_to_url.get(advanced_book, "")).replace(introduction_book, book_to_url.get(introduction_book, "")), "figures": figures, "chapter_info": chapter_info}
 
 def SearchAndEvaluateNode(state: State) -> State:
-
-    print("--Search and Evaluate Node--")
-
-    df = pd.read_pickle('datasets/folk_ntnu_embeddings.pkl')
-    query_description = state.get('query_description')
-    vector = vector_embedding_model.encode(query_description.keywords + [query_description.problem_description])
-    embeddings = np.array(df['embedding'].tolist())
-    dot_prod = np.einsum('ij,kj->ki', vector, embeddings)
-    vec_prod = np.einsum('i,k->ki',np.linalg.norm(vector, axis = -1),np.linalg.norm(embeddings, axis = -1))
-    cosines = dot_prod/vec_prod
-    df['cosine'] = np.max(cosines, axis = -1)
-    threshold = 0.55
-    max_cosine = np.max(cosines)
-
-    sorted_df = df[df['cosine'] > threshold]
-
-    if len(sorted_df) > 0:
-        print(f"Found {len(sorted_df)} chunks.")
-        sources = set(sorted_df['source'].tolist())
-        print(f"Found {len(sources)} papers.")
-
-        authors_papers_dict = {} # Total number of papers retrieved per author
-        authors_chunks_dict = {} # Total number of chunks retrieved per author
-        authors_total_papers_dict = {} # Total number of papers per retrieved author
-        authors_total_chunks_dict = {} # Total number of chunks per retrieved author
-        authors_papers_percentage_dict = {}
-        authors_chunks_percentage_dict = {}
-
-        authors = set()
-
-        for source in sources:
-            source_df = sorted_df[sorted_df['source'] == source]
-            authors_from_source = source_df['authors'].tolist()[0]
-            for a in authors_from_source:
-                authors.add(a)
-
-                cosine = source_df['cosine'].tolist()
-
-                for i in range(len(source_df)):
-                    authors_chunks_dict[a] = authors_chunks_dict.get(a, 0) + 1 + 1*(cosine[i]-threshold)/(max_cosine-threshold)
-
-                authors_papers_dict[a] = authors_papers_dict.get(a, 0) + 1
-            
-        for a in authors:
-            authors_df = df[df['authors'].apply(lambda x: a in x) == True]
-            authors_total_chunks_dict[a] = len(authors_df)
-            authors_papers_df = authors_df[authors_df['chunk'] == 0]
-            authors_total_papers_dict[a] = len(authors_papers_df)
-
-        for a in authors:
-            authors_papers_percentage_dict[a] = authors_papers_dict[a]/authors_total_papers_dict[a]
-            authors_chunks_percentage_dict[a] = 0.5*authors_chunks_dict[a]/authors_total_chunks_dict[a]
-
-        max_papers_per_person = max(authors_total_papers_dict.values()) if authors else 0
-
-        authors_relevance_score = {}
-        gamma = 0.2
-
-        for a in authors:
-            authors_relevance_score[a] = 100*authors_chunks_percentage_dict[a]*authors_papers_percentage_dict[a]*(gamma*max_papers_per_person + authors_total_papers_dict[a])/((1+gamma)*max_papers_per_person)#*(gamma*max_chunks_per_person + authors_total_chunks_dict[a])/((1+gamma)*max_chunks_per_person)
-
-        keywords = state.get('query_description').keywords
-        keywords = keywords if len(keywords) else [state.get('query_description').problem_description]
-        keyword_embeddings = vector_embedding_model.encode(keywords)
-
-        cosine_dict = {}
-
-        for source in sources:
-            top_bigrams_and_freq = get_top_bigrams(df[df['source'].isin([source])])
-            top_bigrams = [bigram for bigram, freq in top_bigrams_and_freq]
-            bigrams_embeddings = vector_embedding_model.encode(top_bigrams)
-
-            # bigrams_embeddings has shape (n_bigrams , 768)
-            # keyword_embeddings has shape (k_keywords, 768)
-
-            dot_prod = np.einsum('nj,kj->nk', bigrams_embeddings, keyword_embeddings)
-            vec_prod = np.einsum('n,k->nk',np.linalg.norm(bigrams_embeddings, axis = -1),np.linalg.norm(keyword_embeddings, axis = -1))
-            cosines = dot_prod/vec_prod
-            new_shape = (len(keywords)*len(top_bigrams),)
-            sorted_cosines = np.reshape(cosines, new_shape)
-            sorted_cosines.sort()
-            n = new_shape[0]//4
-            highest_cosines = np.zeros((n,), dtype = float)
-            for i in range(0,n):
-                highest_cosines[i] = sorted_cosines[new_shape[0]-i-1]
-
-            avg_high_cosine = np.mean(highest_cosines)
-            avg_cosine = np.mean(cosines)
-            cosine_dict[source] = (avg_cosine, avg_high_cosine)
-
-        return {"cosine_dict": cosine_dict,
-                "authors_relevance_score": authors_relevance_score}
-    else:
-        return{}
-
-def SearchAndEvaluateNodeAbstracts(state: State) -> State:
 
     print("--Search and Evaluate Node Abstracts--")
 
@@ -983,25 +887,18 @@ Routers
 def StartNodeRouter(state: State) -> Literal["InformationNode", "RetrieveAuthorNode"]:
     return state.get('start_node')
 
-def RetrievalRouter(state: State) -> Literal["SearchMRSTModulesNode","RetrieveNode","RetrieveAuthorNode"]:
+def RetrievalRouter(state: State) -> Literal["SearchMRSTModulesNode","RetrieveBookNode","RetrieveAuthorNode"]:
     queryDescription = state.get('query_description')
     if queryDescription.authors:
         return "RetrieveAuthorNode"
     else:
-        return "RetrieveNode"
+        return "RetrieveBookNode"
 
-def SearchRouter(state: State) -> Literal["SearchAndEvaluateNode", "SearchAndEvaluateNodeAbstracts"]:
-    only_abstracts = True
-    if only_abstracts == True:
-        return "SearchAndEvaluateNodeAbstracts"
-    else:
-        return "SearchAndEvaluateNode"
-
-def BookRouter(state: State) -> Literal["GenerateBookNode", "SearchAndEvaluateNode", "SearchAndEvaluateNodeAbstracts"]:
+def BookRouter(state: State) -> Literal["GenerateBookNode", "SearchAndEvaluateNode"]:
     if len(state.get('book_df')):
         return "GenerateBookNode"
     else:
-        return SearchRouter(state)
+        return "SearchAndEvaluateNode"
     
 def GitRouter(state: State) -> Literal["GitNode", "SuggestionsNode"]:
     if state.get('github'):
@@ -1017,22 +914,20 @@ graph_builder = StateGraph(State)
 
 graph_builder.add_node("InformationNode", InformationNode)
 graph_builder.add_node("SearchMRSTModulesNode", SearchMRSTModulesNode)
-graph_builder.add_node("RetrieveNode", RetrieveNode)
+graph_builder.add_node("RetrieveBookNode", RetrieveBookNode)
 graph_builder.add_node("GenerateBookNode", GenerateBookNode)
 graph_builder.add_node("SearchAndEvaluateNode", SearchAndEvaluateNode)
-graph_builder.add_node("SearchAndEvaluateNodeAbstracts", SearchAndEvaluateNodeAbstracts)
 graph_builder.add_node("RetrieveAuthorNode", RetrieveAuthorNode)
 graph_builder.add_node("GenerateAuthorNode", GenerateAuthorNode)
 graph_builder.add_node("GitNode", GitNode)
 graph_builder.add_node("SuggestionsNode", SuggestionsNode)
 
 graph_builder.add_conditional_edges(START, StartNodeRouter, {"InformationNode": "InformationNode", "RetrieveAuthorNode": "RetrieveAuthorNode"})
-graph_builder.add_conditional_edges("InformationNode", RetrievalRouter, {"SearchMRSTModulesNode": "SearchMRSTModulesNode", "RetrieveNode": "RetrieveNode", "RetrieveAuthorNode": "RetrieveAuthorNode"})
-graph_builder.add_conditional_edges("RetrieveNode", BookRouter, {"GenerateBookNode":"GenerateBookNode", "SearchAndEvaluateNode":"SearchAndEvaluateNode", "SearchAndEvaluateNodeAbstracts":"SearchAndEvaluateNodeAbstracts"})
-graph_builder.add_conditional_edges("GenerateBookNode", SearchRouter, {"SearchAndEvaluateNode":"SearchAndEvaluateNode", "SearchAndEvaluateNodeAbstracts":"SearchAndEvaluateNodeAbstracts"})
+graph_builder.add_conditional_edges("InformationNode", RetrievalRouter, {"SearchMRSTModulesNode": "SearchMRSTModulesNode", "RetrieveBookNode": "RetrieveBookNode", "RetrieveAuthorNode": "RetrieveAuthorNode"})
+graph_builder.add_conditional_edges("RetrieveBookNode", BookRouter, {"GenerateBookNode":"GenerateBookNode", "SearchAndEvaluateNode":"SearchAndEvaluateNode"})
+graph_builder.add_edge("GenerateBookNode", "SearchAndEvaluateNode")
 graph_builder.add_edge("SearchMRSTModulesNode", "InformationNode")
 graph_builder.add_conditional_edges("SearchAndEvaluateNode", GitRouter, {"GitNode": "GitNode", "SuggestionsNode": "SuggestionsNode"})
-graph_builder.add_conditional_edges("SearchAndEvaluateNodeAbstracts", GitRouter, {"GitNode": "GitNode", "SuggestionsNode": "SuggestionsNode"})
 graph_builder.add_edge("RetrieveAuthorNode", "GenerateAuthorNode")
 graph_builder.add_edge("GenerateAuthorNode", "SuggestionsNode")
 graph_builder.add_edge("GitNode", "SuggestionsNode")
@@ -1041,4 +936,4 @@ graph_builder.add_edge("SuggestionsNode", END)
 graph = graph_builder.compile()
 graph.get_graph().draw_mermaid_png(output_file_path='graph_vizualization.png')
 
-print("Graph has been built and vizualization saved as 'graph_vizualization.png'")
+print("Graph has been built and vizualization saved as 'graph_vizualization.png'\n")
