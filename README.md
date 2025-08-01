@@ -27,6 +27,10 @@ Prepare the source code package by running
 To run the program, navigate to the frontend folder and enter
 ```streamlit run app.py```
 
+If everything is set up correctly, you should see
+![Example Image](images/app_loaded.png)
+
 ## Image of Excecution Graph
 
-![Excecution Graph](graph_vizualization.png)
+![Excecution Graph](images/graph_vizualization.png)
+

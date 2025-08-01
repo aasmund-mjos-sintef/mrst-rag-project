@@ -1040,7 +1040,7 @@ def invoke_graph(state: State) -> State:
     return program.invoke(state)
     
 
-def get_graph_vizualization(file_path='graph_vizualization.png'):
+def get_graph_vizualization(file_path='images/graph_vizualization.png'):
     """
     file_path must be <filename>.png
     Draw mermaid plot of the graph and save png to file_path

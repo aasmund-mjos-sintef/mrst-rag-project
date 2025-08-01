@@ -3,13 +3,13 @@ def test_pipeline():
 
     question = "What can you tell me about chemical eor?"
     print("Starting Pipeline Test")
-    state = graph.invoke_graph(graph.State(query = question,
-                                            code_query = "",
-                                            start_node = "InformationNode",
-                                            clustering = False,
-                                            github = False,
-                                            chapter_images = False,
-                                            text_answer = False))
+    graph.invoke_graph(graph.State(query = question,
+                                    code_query = "",
+                                    start_node = "InformationNode",
+                                    clustering = False,
+                                    github = False,
+                                    chapter_images = False,
+                                    text_answer = False))
     print("\nSUCCESS\n")
 
 test_pipeline()
