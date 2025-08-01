@@ -125,6 +125,9 @@ cluster_to_color ={
 7:"#808080"
 }
 
+relevant_node_color = "#eea46b"
+unrelevant_node_color = "#ebe4d8"
+
 advanced_section_to_author = {
     1: ["Runar L. Berge", "Øystein S. Klemetsdal", "Knut-Andreas Lie"],
     2: ["Mohammed Al Kobaisi", "Wenjuan Zhang"],
@@ -274,9 +277,9 @@ def generate_book_graph_figure(chapter: int, book: str, sections: set[tuple[int,
     node_colors = []
     for i in range(len(df)):
         if (chapter, first[i], second[i]) in sections:
-            node_colors.append("green")
+            node_colors.append(relevant_node_color)
         else:
-            node_colors.append("lightblue")
+            node_colors.append(unrelevant_node_color)
 
     A = to_agraph(G)
 
