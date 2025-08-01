@@ -332,4 +332,4 @@ for c_info, img in st.session_state.figures:
 </div>
 """, height = 550)
     
-    st.markdown(f"Map over chapter {c_info[0]} in {graph.book_to_url.get(c_info[1])} by {", ".join(c_info[2])}. A green node means that I found relevant content in that chapter. You can zoom in by scrolling.")
+    st.markdown(f"Map over chapter {c_info[0]} in {graph.book_to_url.get(c_info[1])} by {", ".join(c_info[2])}. An orange node means that I found relevant content in that chapter. You can zoom in by scrolling.")
