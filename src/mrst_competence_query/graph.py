@@ -96,8 +96,6 @@ class State(TypedDict):
     figures: List[Figure]
     c_fig: Figure
     c_name: List[tuple[int, str, str]]
-    tools_calls: List[tuple[str, List[str]]]
-    visited_link: str
     chapter_info: tuple[int, str, List[str]]
     book_relevance_score: dict[str, float]
     authors_relevance_score: dict[str, float]
@@ -175,11 +173,19 @@ book_to_url = {
 Helper functions
 """
 
-def load_dataframe(filename: str):
+def load_dataframe(filename: str) -> pd.DataFrame:
+    """
+    Returns pandas Dataframe from pickle file
+    """
     with resources.files("mrst_competence_query.datasets").joinpath(filename).open("rb") as f:
         return pd.read_pickle(f)
 
-def split_by_more(string: str, chars: List[str] = []):
+def split_by_more(string: str, chars: List[str] = []) -> List[str]:
+    """
+    Almost the same as str.split, only splits by multiple characters,
+    and does so by replacing chars[i] with chars[i+1] until the last char,
+    which is used to split the string
+    """
     if chars == []:
         return string.split()
     else:
@@ -188,8 +194,11 @@ def split_by_more(string: str, chars: List[str] = []):
         return string.split(chars[-1])
 
 def name_in(name: str, name_list: List[str]) -> bool:
-
-    "First, simple check to see if exact name is listed in name_list"
+    """
+    Checkis if name is in name_list.
+    Two names are considered equal if the first letter of the first word in each name is equal,
+    and if the last word in each name is equal.
+    """
     if name in name_list:
         return True
     
@@ -202,11 +211,15 @@ def name_in(name: str, name_list: List[str]) -> bool:
                 return True
     return False
 
-def new_title(title):
+def new_title(title: str, n_chars: int = 10) -> str:
+    """
+    Splits the title into multiple lines
+    When chars on one line exceedds n_chars,
+    next word will be placed on the next line
+    """
     t_split = title.split()
     new_title = ""
     current = ""
-    n_chars = 10
     for word in t_split:
         current += " "+word
         if len(current) > n_chars:
@@ -216,20 +229,28 @@ def new_title(title):
     new_title += current
     return new_title
 
-def node_size(n):
-    if n:
+def node_size(number_of_paths_out_of_node: int) -> int:
+    """
+    Calculates Node Size based on number of paths out of node
+    """
+    if number_of_paths_out_of_node:
         return 5000
     else:
         return 1500
 
-def font_size(n):
-    if n:
+def font_size(number_of_paths_out_of_node: int) -> int:
+    """
+    Calculates Font Size based on number of paths out of node
+    """
+    if number_of_paths_out_of_node:
         return 5
     else:
         return 3
     
-def get_bigram_freq(text):
-
+def get_bigram_freq(text: str) -> Counter:
+    """
+    Returns Counter object of bigrams in text.
+    """
     words = findall(r'\w+', text.lower()) 
     words = [word for word in words if word not in stop_words and len(word) > 2]
 
@@ -238,7 +259,11 @@ def get_bigram_freq(text):
 
     return Counter(bigram_list)
 
-def get_top_bigrams(df):
+def get_top_bigrams(df: pd.DataFrame) -> List[tuple[str, int]]:
+    """
+    Gathers top bigrams from df['content']
+    Returns list of tuple with structure (bigram, count)
+    """
     total_text = ""
     for c in df['content'].tolist():
         total_text += c
@@ -246,7 +271,13 @@ def get_top_bigrams(df):
     counter = get_bigram_freq(total_text)
     return counter.most_common(10)
 
-def generate_book_graph_figure(chapter: int, book: str, sections: set[tuple[int, int, int]]):
+def generate_book_graph_figure(chapter: int, book: str, sections: set[tuple[int, int, int]]) -> Figure:
+    """
+    Generates chapter graphs showing the structure of the chapter in the book.
+    sections are relevant chapters. These will be highlighted with orange colour
+    Requires a way to generate pygraphviz graph from networkx.DiGraph
+    Returns matplotlib figure.
+    """
     book_df = load_dataframe("book_embeddings.pkl")
     df = book_df[(book_df['file_type'].isin([book])) & (book_df['0'].isin([chapter]))]
     t = df['title'].tolist()
@@ -317,12 +348,9 @@ def generate_book_graph_figure(chapter: int, book: str, sections: set[tuple[int,
     ax.set_axis_off()
     return fig
 
-def umap_reduce(filtered_df):
+def umap_reduce(filtered_df: pd.DataFrame) -> pd.DataFrame:
     """
     Given a DataFrame, creates a manifold on the 768-dim vectors using the UMAP algorithm to reduce them to 50 dimensions.
-    It assumes the DataFrame has been cosine filtered so the manifold only learns the topology of the relevant vectors,
-    because a manifold created on the entire dataset does not learn the intricacies of the queried subtopic as well.
-
     It returns None if the number of vectors is too low to create a manifold.
     Else, it returns the DataFrame with the new column 'embedding_umap' containing the 50-dim vectors.
     """
@@ -335,9 +363,10 @@ def umap_reduce(filtered_df):
     except Exception as e:
         return pd.DataFrame()
 
-def hdbscan_cluster(reduced_df):
+def hdbscan_cluster(reduced_df: pd.DataFrame) -> pd.DataFrame:
     """
     Given a DataFrame with 50-dim vectors, clusters the vectors using the HDBSCAN algorithm.
+    Input is the reduced_df from umap_reduce(df). If reduced_df is None, returns empty df
     It returns the DataFrame with a new column 'cluster' containing the assigned cluster for each row.
     """
 
@@ -364,7 +393,14 @@ def hdbscan_cluster(reduced_df):
 
     return reduced_df
 
-def cluster_names(clustered_df):
+def cluster_names(clustered_df: pd.DataFrame) -> List[tuple[int, str, str]]:
+    """
+    Given a clustered df from hdbscan_cluster(umap_reduce(df)),
+    returns a list of (cluster_nr, name, description) for each cluster,
+    where cluster_nr is the integer nr. for a cluster,
+    name and description are AI generated descriptions of the clusters
+    based on the most frequent bigrams in the clusters abstracts
+    """
     different_clusters = set(clustered_df['cluster'].tolist())
     top_words = []
     for c in different_clusters:
@@ -381,7 +417,11 @@ def cluster_names(clustered_df):
     description = cluster_description.description
     return list(zip(different_clusters, name, description))
 
-def get_paper_response_if_not_cluster(query, df):
+def get_paper_response_if_not_cluster(query: str, df: pd.DataFrame) -> str:
+    """
+    Given the users query, and a filtered/sorted df,
+    returns an AI generated text about relevant authors
+    """
     context = "\n + ""\n\n".join([f" title: {t}\n authors: {", ".join(a)}\n content: {c}" for t,a,c in zip(df['titles'], df['authors'], df['content'])])
     msg = [{"role": "system", "content": f"""
             You are going to guide the user to the authors best suited to help with their problem.
@@ -390,7 +430,12 @@ def get_paper_response_if_not_cluster(query, df):
             Context:{context}"""}, {"role":"user", "content": query}]
     return nano_client.invoke(msg).content
 
-def get_cluster_response(query, df):
+def get_cluster_response(query: str, df: pd.DataFrame) -> str:
+    """
+    Given the users query, and a df consisting of papers in one cluster
+    (you should not input all the documents in a cluster, but rather take the top 10 or 5 or something),
+    returns an AI generated text about relevant authors. 
+    """
     context = "\n + ""\n\n".join([f" title: {t}\n authors: {", ".join(a)}\n content: {c}" for t,a,c in zip(df['titles'], df['authors'], df['content'])])
     msg = [{"role": "system", "content": f"""
             You are going to guide the user to the authors best suited to help with their problem.
@@ -404,6 +449,9 @@ Nodes
 """
 
 def InformationNode(state: State) -> State:
+    """
+    Generates keywords, a problem description, and authors from a users query
+    """
     query = state.get("query")
 
     print("--Information Node--")
@@ -479,11 +527,15 @@ def InformationNode(state: State) -> State:
     return {"query_description": query_description}
 
 def SearchMRSTModulesNode(state: State) -> State:
-    link = state.get('query_description').tools_input
-    return {"tools_calls": [web_search_mrst.invoke(input = link)], "visited_link": link}
+    """
+    Only here to vizualize a node in the graph
+    """
+    return {}
 
 def RetrieveBookNode(state: State) -> State:
-
+    """
+    Retrieves Relevant Book Sub Chapters
+    """
     print("--Retrieve Book Node--")
 
     df = load_dataframe('book_embeddings.pkl')
@@ -508,7 +560,9 @@ def RetrieveBookNode(state: State) -> State:
     return {"book_df": book_df, "book_relevance_score": book_relevance_score}
 
 def GenerateBookNode(state: State) -> State:
-
+    """
+    Retrieves an AI generated text about relevant authors in the relevant book-chapters
+    """
     print("--Generate Book Node--")
 
     query = state.get('query')
@@ -560,6 +614,9 @@ def GenerateBookNode(state: State) -> State:
             "chapter_info": chapter_info}
 
 def RetrieveAuthorNode(state: State) -> State:
+    """
+    Retrieves relevant chapters and papers based on authors mentioned in the users query
+    """
 
     print("--Retrieve Author Node--")
 
@@ -574,6 +631,9 @@ def RetrieveAuthorNode(state: State) -> State:
     return {"book_df": book_df, "relevant_papers_df": relevant_papers_df}
 
 def GenerateAuthorNode(state: State) -> State:
+    """
+    Returns an AI generated text about relevant chapters and papers from the authors mentioned in the users query
+    """
 
     print("--Generate Author Node--")
 
@@ -662,6 +722,9 @@ def GenerateAuthorNode(state: State) -> State:
         return {"author_response": author_response.replace(advanced_book, book_to_url.get(advanced_book, "")).replace(introduction_book, book_to_url.get(introduction_book, "")), "figures": figures, "chapter_info": chapter_info}
 
 def SearchAndEvaluateNode(state: State) -> State:
+    """
+    Retrieves relevant abstracts to the user's query, reranks the papers and generates text about relevant authors based on the reranked papers
+    """
 
     print("--Search and Evaluate Node Abstracts--")
 
@@ -801,6 +864,10 @@ def SearchAndEvaluateNode(state: State) -> State:
         return {}
 
 def GitNode(state: State) -> State:
+    """
+    Retrieves relevant commits in relevant folders to the user's query and matlab query.
+    Uses the commits to return relevant github authors.
+    """
 
     print("--Git Node--")
 
@@ -903,9 +970,15 @@ def SuggestionsNode(state: State) -> State:
 Routers
 """
 def StartNodeRouter(state: State) -> Literal["InformationNode", "RetrieveAuthorNode"]:
+    """
+    Uses start_node to choose where to start the graph excecution
+    """
     return state.get('start_node')
 
 def RetrievalRouter(state: State) -> Literal["SearchMRSTModulesNode","RetrieveBookNode","RetrieveAuthorNode"]:
+    """
+    If authors are detected in the query_description, guides the program to the RetrieveAuthorNode
+    """
     queryDescription = state.get('query_description')
     if queryDescription.authors:
         return "RetrieveAuthorNode"
@@ -913,12 +986,18 @@ def RetrievalRouter(state: State) -> Literal["SearchMRSTModulesNode","RetrieveBo
         return "RetrieveBookNode"
 
 def BookRouter(state: State) -> Literal["GenerateBookNode", "SearchAndEvaluateNode"]:
+    """
+    If relevant chapters are found, takes detour to GenerateBookNode
+    """
     if len(state.get('book_df')):
         return "GenerateBookNode"
     else:
         return "SearchAndEvaluateNode"
     
 def GitRouter(state: State) -> Literal["GitNode", "SuggestionsNode"]:
+    """
+    If user set github search (state.github) to True, guides the program to GitNode
+    """
     if state.get('github'):
         return "GitNode"
     else:
@@ -953,12 +1032,19 @@ graph_builder.add_edge("SuggestionsNode", END)
 
 program = graph_builder.compile()
 
-def invoke_graph(state: State):
+def invoke_graph(state: State) -> State:
+    """
+    Invoke the graph
+    """
     print("Invoking Graph!")
     return program.invoke(state)
     
 
-def get_graph_vizualization():
-    program.get_graph().draw_mermaid_png(output_file_path='graph_vizualization.png')
+def get_graph_vizualization(file_path='graph_vizualization.png'):
+    """
+    file_path must be <filename>.png
+    Draw mermaid plot of the graph and save png to file_path
+    """
+    program.get_graph().draw_mermaid_png(output_file_path=file_path)
 
 print("Graph has successfully been built, and is ready for use\n")
