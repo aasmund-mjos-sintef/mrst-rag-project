@@ -217,7 +217,7 @@ with button:
     st.checkbox(label = "Cluster", key = "clustering", value=True, help = "If you want to cluster the MRST papers based on their content, check this box. This will take a bit longer to run.")
     st.checkbox(label = "Chapter Images", key = "chapter_images", value=True, help="If you want to show a graph over the relevant chapters in the MRST textbooks, check this box. This will take a bit longer to run.")
     st.checkbox(label = "Text Answer", key = "text_answer", value=True, help="If you want to get a text answer to your query, check this box. This will take a bit longer to run.")
-    st.checkbox(label = "Git Hub", key = "github", value=False, help="If you want to retrieve relevant github commits in the MRST repository, check this box. This will take a bit longer to run.")
+    st.checkbox(label = "Git", key = "github", value=False, help="If you want to retrieve relevant github commits in the MRST repository, check this box. This will take a bit longer to run.")
 
 response_area = st.markdown(st.session_state.response)
 
