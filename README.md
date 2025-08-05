@@ -34,13 +34,13 @@ and enter your password to get permission
 Install the requirements by running  
 ```pip install -r requirements.txt```  
 
-Prepare the source code package by running
+Prepare the source code package by running  
 ```pip install -e .```  
 
 ## Running the Program
 
 To run the program, navigate to the frontend folder and enter
-```streamlit run app.py```
+```streamlit run app.py```  
 
 If everything is set up correctly, you should see
 ![Example Image](images/app_loaded.png)
