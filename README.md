@@ -42,7 +42,13 @@ Prepare the source code package by running
 To run the program, navigate to the frontend folder and enter
 ```streamlit run app.py```  
 
-If everything is set up correctly, you should see
+If everything is set up correctly, you should see the image below
+However while the source code is being imported, the buttons to the right will not be visible.
+The first time you run the program,this will probably take a while
+This is because the vector embedding models have to be downloaded on your computer.
+If you haven't specified the path to the mrst repository in the .env file,
+make sure the Git Hub button is switched off
+
 ![Example Image](images/app_loaded.png)
 
 ## Image of Excecution Graph
