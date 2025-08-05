@@ -70,8 +70,10 @@ mini_client = ChatOpenAI(model="gpt-4.1-mini", temperature=0.0, openai_api_key=l
 tool_client = ChatOpenAI(model="gpt-4o-mini", temperature=0.0, openai_api_key=langchain_openai_api_key)
 tool_agent = create_react_agent(model = tool_client, tools = tools, response_format = QueryDescription)
 vector_embedding_model = SentenceTransformer('sentence-transformers/all-mpnet-base-v2')
-specter_embedding_model = SentenceTransformer("allenai-specter")
 specter = False
+specter_embedding_model = None
+if specter:
+    specter_embedding_model = SentenceTransformer("allenai-specter")
 
 print("Initializing Graph...")
 
@@ -85,6 +87,7 @@ class State(TypedDict):
     code_query: str
     coding_keywords: List[str]
     query_description : QueryDescription
+    keywords_before_filtering: List[str]
     book_df: pd.DataFrame
     code_df: pd.DataFrame
     relevant_papers_df: pd.DataFrame
@@ -484,6 +487,7 @@ def InformationNode(state: State) -> State:
 
     problem_description = query_description.problem_description
     keywords = query_description.keywords
+    keywords_before_filtering = keywords
 
     authors = nano_client.with_structured_output(Authors).invoke([{"role": "system", "content": "You are going to extract specific SINTEF researchers from a users query. In other words, only return a list if there is a human name in the query"}, {"role": "user", "content": query}]).authors
     authors = [a for a in authors if "sintef" not in a.lower()]
@@ -524,7 +528,7 @@ def InformationNode(state: State) -> State:
         authors=authors
     )
 
-    return {"query_description": query_description}
+    return {"query_description": query_description, 'keywords_before_filtering': keywords_before_filtering}
 
 def SearchMRSTModulesNode(state: State) -> State:
     """
