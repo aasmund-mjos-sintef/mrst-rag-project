@@ -16,7 +16,22 @@ but can help with debugging openai_api errors or find out where and why the prog
 It's important to download the original MRST repository if you want to use the github search.
 If you don't download the original MRST repository, you will get an error if you include github search in the settings.
 
-Create a virtual environment and make sure to run
+You need to be on python version newer or equal to 3.13
+Create a virtual environment by running 
+```python3 -m venv .venv```
+
+Activate the environment by running
+```source .venv/bin/activate```
+
+For this project you need graphviz downloaded on your computer.
+On Debian/Ubuntu systems run
+```apt install graphviz```
+
+you may need to run this instead
+```sudo apt install graphviz```
+and enter your password to get permission
+
+Install the requirements by running
 ```pip install -r requirements.txt```
 
 Prepare the source code package by running
