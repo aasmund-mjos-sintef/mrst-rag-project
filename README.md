@@ -27,9 +27,6 @@ you may need to run this instead
 ```sudo apt install graphviz```  
 and enter your password to get permission
 
-Install the requirements by running  
-```pip install -r requirements.txt```  
-
 Prepare the source code package by running  
 ```pip install -e .```  
 
