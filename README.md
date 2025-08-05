@@ -4,7 +4,7 @@ This is a proof-of-concept application meant to demonstrate a compentece search 
 
 ## Getting Started
 
-Clone the repository by running
+Clone the repository by running  
 ```git clone https://github.com/aasmund-mjos-sintef/mrst-rag-project.git```
 
 Create a .env file in the main directory and enter  
