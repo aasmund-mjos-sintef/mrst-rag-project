@@ -1,25 +1,22 @@
 def test_keywords():
     from mrst_competence_query.graph import State, InformationNode
-    questions =  [
-        'What can you tell me about eor methods',
-        'Who should I contact about coupled flow and geomechanics for CO2',
-        'Who should I contact about polymer flooding',
-        'Who should I call about linear solvers',
-        'Who in MRST should I reach out to about Virtual Element Methods',
-        'Who should I reach out to about ad-blackoil'
-    ]
-    keywords_from_question = {}
-    for q in questions:
-        keywords_from_question[q] = InformationNode(State(query = q)).get('query_description').keywords
+    from mrst_competence_query.questions import example_questions
     
-    return keywords_from_question
+    keywords_from_question_before_filtering = {}
+    keywords_from_question_after_filtering = {}
+    for q in example_questions:
+        state = InformationNode(State(query = q))
+        keywords_from_question_after_filtering[q] = state.get('query_description').keywords
+        keywords_from_question_before_filtering[q] = state.get('keywords_before_filtering')
+    
+    return keywords_from_question_before_filtering, keywords_from_question_after_filtering
 
 def print_keywords():
-    keywords_from_question = test_keywords()
-    questions = keywords_from_question.keys()
+    b_f, a_f  = test_keywords()
+    questions = b_f.keys()
     for q in questions:
         print('-'*40 + '\n' + q + '\n')
-        for k in keywords_from_question.get(q):
+        for k in a_f.get(q):
             print(k)
         print('')
 
@@ -33,34 +30,61 @@ def one_question_keywords_table(questions):
     return string
 
 def print_keywords_to_latex_table():
-    keywords_from_question = test_keywords()
-    q = list(keywords_from_question.keys())
+    b_f, a_f = test_keywords()
+    q = list(a_f.keys())
     print(rf'''
 \scriptsize
 \begin{{center}}
 \captionsetup{{hypcap=false}}
-\captionof{{table}}{{CAPTION HERE}} \label{{tab:}}
+\captionof{{table}}{{Before filtering}} \label{{tab:keywords_before_filtering}}
 \begin{{tabular}}{{|m{{5cm}}|m{{5cm}}|m{{5cm}}|}}
 \hline
 \textbf{{{q[0]}}} &
 \textbf{{{q[1]}}} &
 \textbf{{{q[2]}}} \\
 \hline
-{one_question_keywords_table(keywords_from_question.get(q[0]))}& 
-{one_question_keywords_table(keywords_from_question.get(q[1]))}&
-{one_question_keywords_table(keywords_from_question.get(q[2]))}\\
+{one_question_keywords_table(b_f.get(q[0]))}& 
+{one_question_keywords_table(b_f.get(q[1]))}&
+{one_question_keywords_table(b_f.get(q[2]))}\\
 \hline
 \textbf{{{q[3]}}} &
 \textbf{{{q[4]}}} &
 \textbf{{{q[5]}}} \\
 \hline
-{one_question_keywords_table(keywords_from_question.get(q[3]))}& 
-{one_question_keywords_table(keywords_from_question.get(q[4]))}&
-{one_question_keywords_table(keywords_from_question.get(q[5]))}\\
+{one_question_keywords_table(b_f.get(q[3]))}& 
+{one_question_keywords_table(b_f.get(q[4]))}&
+{one_question_keywords_table(b_f.get(q[5]))}\\
 \hline
 \end{{tabular}}
 \end{{center}}
 \normalsize
+
+\scriptsize
+\begin{{center}}
+\captionsetup{{hypcap=false}}
+\captionof{{table}}{{After filtering}} \label{{tab:keywords_after_filtering}}
+\begin{{tabular}}{{|m{{5cm}}|m{{5cm}}|m{{5cm}}|}}
+\hline
+\textbf{{{q[0]}}} &
+\textbf{{{q[1]}}} &
+\textbf{{{q[2]}}} \\
+\hline
+{one_question_keywords_table(a_f.get(q[0]))}& 
+{one_question_keywords_table(a_f.get(q[1]))}&
+{one_question_keywords_table(a_f.get(q[2]))}\\
+\hline
+\textbf{{{q[3]}}} &
+\textbf{{{q[4]}}} &
+\textbf{{{q[5]}}} \\
+\hline
+{one_question_keywords_table(a_f.get(q[3]))}& 
+{one_question_keywords_table(a_f.get(q[4]))}&
+{one_question_keywords_table(a_f.get(q[5]))}\\
+\hline
+\end{{tabular}}
+\end{{center}}
+\normalsize
+
 ''')
 
 print_keywords_to_latex_table()
