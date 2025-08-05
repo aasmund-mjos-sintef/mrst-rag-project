@@ -7,7 +7,7 @@ database of papers and documentation.
 ## Getting Started
 
 Create a .env file in the main directory and enter  
-```LANGCHAIN_OPENAI_API_KEY = <your_api_key>```  
+```LANGCHAIN_OPENAI_API_KEY = <your_openai_api_key>```  
 ```MRST_REPOSITORY_PATH = <full_path_to_downloaded_mrst_repository>```  
 
 You can use the .env.example file as an example. Any environment variable associated with LangSmith is not needed,
