@@ -4,6 +4,9 @@ This is a proof-of-concept application meant to demonstrate a compentece search 
 
 ## Getting Started
 
+Clone the repository by running
+```git clone https://github.com/aasmund-mjos-sintef/mrst-rag-project.git```
+
 Create a .env file in the main directory and enter  
 ```LANGCHAIN_OPENAI_API_KEY = <your_openai_api_key>```  
 ```MRST_REPOSITORY_PATH = <full_path_to_downloaded_mrst_repository>```  
