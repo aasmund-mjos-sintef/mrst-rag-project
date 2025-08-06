@@ -10,7 +10,8 @@ Clone the repository by running
 ```
   git clone https://github.com/aasmund-mjos-sintef/mrst-rag-project.git
 ```
-\
+
+
 
 Create a .env file in the main directory and enter  
 ```
@@ -22,6 +23,8 @@ Create a .env file in the main directory and enter
 
 - It's important to download the original MRST repository if you want to use the git search. If you don't download the original MRST repository, you will get an error if you include git search in the settings. You can go to [mrst github](https://github.com/SINTEF-AppliedCompSci/MRST) to download it
 
+
+
 You need to be on python version newer or equal to 3.13
 Create a virtual environment by running  
 ```bash
@@ -30,6 +33,8 @@ Create a virtual environment by running
   # Activate the virtual environment
   source .venv/bin/activate
 ```
+
+
 
 For this project you need graphviz downloaded on your computer:  
 - On Debian/Ubuntu systems run  
@@ -41,6 +46,8 @@ For this project you need graphviz downloaded on your computer:
 ```bash
   brew install graphviz
 ```  
+
+
 
 Prepare the source code package by running  
 ```bash
