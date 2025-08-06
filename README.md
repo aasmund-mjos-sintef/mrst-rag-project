@@ -10,16 +10,17 @@ This is a proof-of-concept application meant to demonstrate a compentece search 
 ```
   git clone https://github.com/aasmund-mjos-sintef/mrst-rag-project.git
 ```
-<br><br>
+<br>
 ### Create a .env file in the main directory
 - You can use the .env.example file as an example. Any environment variable associated with LangSmith is not needed, but can help with debugging openai_api errors or find out where and why the program does something stupid.
-- It's important to download the original MRST repository if you want to use the git search. If you don't download the original MRST repository, you will get an error if you include git search in the settings. You can go to [mrst github](https://github.com/SINTEF-AppliedCompSci/MRST) to download it.  
+- It's important to download the original MRST repository if you want to use the git search. If you don't download the original MRST repository, you will get an error if you include git search in the settings. You can go to [mrst github](https://github.com/SINTEF-AppliedCompSci/MRST) to download it.
+<br>
 The essential stuff is
 ```
   LANGCHAIN_OPENAI_API_KEY = <your_openai_api_key>  
   MRST_REPOSITORY_PATH = <full_path_to_downloaded_mrst_repository>
 ```  
-<br><br>
+<br>
 ### Create a virtual environment
 You need to be on python version newer or equal to 3.13
 ```bash
@@ -28,7 +29,7 @@ You need to be on python version newer or equal to 3.13
   # Activate the virtual environment
   source .venv/bin/activate
 ```  
-<br><br>
+<br>
 ### Graphviz
 For this project you need graphviz downloaded on your computer:  
 - On Debian/Ubuntu systems run  
@@ -39,7 +40,7 @@ For this project you need graphviz downloaded on your computer:
 ```bash
   brew install graphviz
 ```  
-<br><br>
+<br>
 ### Prepare the source code package  
 ```bash
   pip install -e .
