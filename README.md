@@ -27,7 +27,6 @@ Activate the environment by running
 For this project you need graphviz downloaded on your computer:  
 - On Debian/Ubuntu systems run  
 ```sudo apt install graphviz```   
-and enter your password to get permission  
 
 - On Mac, you can use homebrew  
 ```brew install graphviz```  
