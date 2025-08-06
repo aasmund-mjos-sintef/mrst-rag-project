@@ -7,7 +7,9 @@ This is a proof-of-concept application meant to demonstrate a compentece search 
 ## Getting Started
 
 Clone the repository by running  
-```git clone https://github.com/aasmund-mjos-sintef/mrst-rag-project.git```
+```
+  git clone https://github.com/aasmund-mjos-sintef/mrst-rag-project.git
+```
 
 Create a .env file in the main directory and enter  
 ```
@@ -30,18 +32,26 @@ Create a virtual environment by running
 
 For this project you need graphviz downloaded on your computer:  
 - On Debian/Ubuntu systems run  
-```sudo apt install graphviz```   
+```bash
+  sudo apt install graphviz
+```   
 
 - On Mac, you can use homebrew  
-```brew install graphviz```  
+```bash
+  brew install graphviz
+```  
 
 Prepare the source code package by running  
-```pip install -e .```  
+```bash
+  pip install -e .
+```  
 
 ## Running the Program
 
 To run the program, navigate to the frontend folder and enter
-```streamlit run app.py```  
+```bash
+  streamlit run app.py
+```  
 
 If everything is set up correctly, you should see the image below. However while the source code is being imported, the buttons to the right will not be visible. The first time you run the program,this will probably take a while. This is because the vector embedding models have to be downloaded on your computer. If you haven't specified the path to the mrst repository in the .env file, make sure the Git button is switched off.
 
