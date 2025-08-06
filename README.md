@@ -19,8 +19,9 @@ It's important to download the original MRST repository if you want to use the g
 
 You need to be on python version newer or equal to 3.13
 Create a virtual environment by running  
-```python3 -m venv .venv
-source .venv/bin/activate```  
+<pre> ```language your multiline code here ``` </pre>
+python3 -m venv .venv
+source .venv/bin/activate  
 
 For this project you need graphviz downloaded on your computer:  
 - On Debian/Ubuntu systems run  
