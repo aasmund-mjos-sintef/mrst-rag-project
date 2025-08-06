@@ -24,13 +24,13 @@ Create a virtual environment by running
 Activate the environment by running  
 ```source .venv/bin/activate```  
 
-For this project you need graphviz downloaded on your computer.
-On Debian/Ubuntu systems run  
-```apt install graphviz```  
+For this project you need graphviz downloaded on your computer:  
+- On Debian/Ubuntu systems run  
+```sudo apt install graphviz```   
+and enter your password to get permission  
 
-you may need to run this instead  
-```sudo apt install graphviz```  
-and enter your password to get permission
+- On Mac, you can use homebrew  
+```brew install graphviz```  
 
 Prepare the source code package by running  
 ```pip install -e .```  
