@@ -728,10 +728,10 @@ def GenerateAuthorNode(state: State) -> State:
 
 def SearchAndEvaluateNode(state: State) -> State:
     """
-    Retrieves relevant abstracts to the user's query, reranks the papers and generates text about relevant authors based on the reranked papers
+    Retrieves relevant papers to the user's query, reranks the papers and generates text about relevant authors based on the reranked papers
     """
 
-    print("--Search and Evaluate Node Abstracts--")
+    print("--Search and Evaluate Node--")
 
     if specter:
 
