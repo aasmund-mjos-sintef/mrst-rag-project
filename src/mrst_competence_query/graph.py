@@ -443,6 +443,7 @@ def get_cluster_response(query: str, df: pd.DataFrame) -> str:
     msg = [{"role": "system", "content": f"""
             You are going to guide the user to the authors best suited to help with their problem.
             State who is relevant to contact about different subtopics presented in the context related to the users query.
+            The context provided is not the only relevant context.
             Do not try and solve the users problem. Your answer should be a short paragraph.
             Context:{context}"""}, {"role":"user", "content": query}]
     return nano_client.invoke(msg).content
