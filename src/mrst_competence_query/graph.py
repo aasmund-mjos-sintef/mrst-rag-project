@@ -425,7 +425,7 @@ def get_paper_response_if_not_cluster(query: str, df: pd.DataFrame) -> str:
     Given the users query, and a filtered/sorted df,
     returns an AI generated text about relevant authors
     """
-    context = "\n + ""\n\n".join([f" title: {t}\n authors: {", ".join(a)}\n content: {c}" for t,a,c in zip(df['titles'], df['authors'], df['content'])])
+    context = "\n + ""\n\n".join([f" title: {t}\n authors: {", ".join(a)}\n content: {c}" for t,a,c in zip(df['title'], df['authors'], df['content'])])
     msg = [{"role": "system", "content": f"""
             You are going to guide the user to the authors best suited to help with their problem.
             State who is relevant to contact about different subtopics presented in the context related to the users query.
@@ -439,7 +439,7 @@ def get_cluster_response(query: str, df: pd.DataFrame) -> str:
     (you should not input all the documents in a cluster, but rather take the top 10 or 5 or something),
     returns an AI generated text about relevant authors. 
     """
-    context = "\n + ""\n\n".join([f" title: {t}\n authors: {", ".join(a)}\n content: {c}" for t,a,c in zip(df['titles'], df['authors'], df['content'])])
+    context = "\n + ""\n\n".join([f" title: {t}\n authors: {", ".join(a)}\n content: {c}" for t,a,c in zip(df['title'], df['authors'], df['content'])])
     msg = [{"role": "system", "content": f"""
             You are going to guide the user to the authors best suited to help with their problem.
             State who is relevant to contact about different subtopics presented in the context related to the users query.
@@ -691,7 +691,7 @@ def GenerateAuthorNode(state: State) -> State:
 
     if len(df) > 5 and state.get('text_answer', True):
 
-        titles = df['titles'].tolist()
+        titles = df['title'].tolist()
         authors = [", ".join(a) for a in df['authors']]
         context = "\n\n".join([" title: " + i+"\n Authors: "+j for i,j in zip(titles, authors)])
         msg = [{"role": "system", "content": "You are the Generator in RAG application. "+
@@ -706,7 +706,7 @@ def GenerateAuthorNode(state: State) -> State:
     
     elif len(df) > 0 and state.get('text_answer', True):
 
-        titles = df['titles'].tolist()
+        titles = df['title'].tolist()
         authors = [", ".join(a) for a in df['authors']]
         abstracts = df['content'].tolist()
         context = "\n\n".join([" title: " + i+"\n Authors: "+j + "\n Abstract: "+k for i,j,k in zip(titles, authors, abstracts)])
