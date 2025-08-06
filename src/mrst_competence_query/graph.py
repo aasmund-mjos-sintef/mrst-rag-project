@@ -733,9 +733,12 @@ def SearchAndEvaluateNode(state: State) -> State:
 
     print("--Search and Evaluate Node--")
 
+    # Have to change filename
+
     if specter:
 
         df = load_dataframe('mrst_abstracts_embedding_specter.pkl')
+        whole_df = load_dataframe('mrst_whole_articles.pkl')
         query_description = state.get('query_description')
 
         keywords = query_description.keywords
@@ -755,6 +758,7 @@ def SearchAndEvaluateNode(state: State) -> State:
     
     else:
         df = load_dataframe('mrst_abstracts_embedding.pkl')
+        whole_df = load_dataframe('mrst_whole_articles.pkl')
         query_description = state.get('query_description')
 
         keywords = query_description.keywords
@@ -772,22 +776,41 @@ def SearchAndEvaluateNode(state: State) -> State:
 
         sorted_df = df[df['cosine'] > threshold]
 
+    relevant_titles = set(df['title'])
+
     if len(sorted_df) > 0:
 
-        n_bigrams = 5
+        paper_df = whole_df[whole_df['title'].isin(relevant_titles)]
 
-        top_bigrams = [[tup[0] for tup in get_bigram_freq(x).most_common(n_bigrams)] for x in sorted_df['content'].tolist()]
+        max_relevant_chunks_in_one_article = Counter(sorted_df['title']).most_common(1)[0][1]
 
+        def cosine_score_from_title(title):
+            cosines = np.array(sorted_df[sorted_df['title'].sin([title])]['cosine'])
+            n_relevant_chunks_in_one_article = np.shape(cosines)[0]
+            average = np.mean(cosines)
+            maximum = np.max(cosines)
+            return (average + maximum + n_relevant_chunks_in_one_article/max_relevant_chunks_in_one_article)/3
+
+        paper_df['cosine_score'] = paper_df['title'].apply(cosine_score_from_title)
+
+        """
+        Perform the scoring system for all papers
+        """
+
+        alpha = 1/3
+
+        n_bigrams = 10
+        top_bigrams = [[tup[0] for tup in get_bigram_freq(x).most_common(n_bigrams)] for x in paper_df['content'].tolist()]
         top_bigrams_embedded = np.array([vector_embedding_model.encode(x) for x in top_bigrams])
 
         dot_prod = np.einsum('xnj,kj->xnk', top_bigrams_embedded, keyword_embeddings)
         vec_prod = np.einsum('xn,k->xnk',np.linalg.norm(top_bigrams_embedded, axis = -1),np.linalg.norm(keyword_embeddings, axis = -1))
         cosines = dot_prod/vec_prod
 
-        sorted_df['avg_high_cosine'] = np.mean(np.max(cosines, axis = -1), axis = -1)
-        sorted_df['score'] = [c + a_h_c for c, a_h_c in zip(sorted_df['cosine'], sorted_df['avg_high_cosine'])]
+        paper_df['avg_high_score'] = np.mean(np.max(cosines, axis = -1), axis = -1)
+        paper_df['score'] = [alpha*c + a_h_c for c, a_h_c in zip(paper_df['cosine_score'], paper_df['avg_high_score'])]
 
-        authors_abstract_score  = {}
+        authors_papers_score  = {}
         authors_n_rel_abstracts = {}
         authors_total_n_papers  = {}
         authors_relevance_score = {}
@@ -801,7 +824,7 @@ def SearchAndEvaluateNode(state: State) -> State:
         for authors, score in zip(sorted_df['authors'], sorted_df['score']):
             for a in authors:
                 authors_set.add(a)
-                authors_abstract_score[a] = authors_abstract_score.get(a, 0) + (1+score)**2-1
+                authors_papers_score[a] = authors_papers_score.get(a, 0) + (1+score)**2-1
                 authors_n_rel_abstracts[a] = authors_n_rel_abstracts.get(a, 0) + 1
         
         max_n_papers = 0
@@ -812,7 +835,7 @@ def SearchAndEvaluateNode(state: State) -> State:
         gamma = 0.2
 
         for a in authors_set:
-            authors_relevance_score[a] = 100*authors_abstract_score[a]/(authors_total_n_papers[a]*max_n_papers)**gamma
+            authors_relevance_score[a] = 100*authors_papers_score[a]/(authors_total_n_papers[a]*max_n_papers)**gamma
 
         c_fig = None
         c_name = None
