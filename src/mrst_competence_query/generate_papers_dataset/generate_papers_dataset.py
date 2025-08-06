@@ -257,7 +257,15 @@ def try_fetching_pdf(url, only_abstract):
                     if span:
                         paragraphs.append(p.get_text())
 
-                return {"sections": paragraphs}, "dict"
+                abstract = ""
+
+                for p in soup.find_all('p'):
+                    span = p.find('span', class_='paraNumber')
+                    if span:
+                        abstract = p.get_text()
+                        break
+
+                return {"sections": paragraphs, "abstract": abstract}, "dict"
 
     elif "arxiv.org" == url_snippet:
 
@@ -500,6 +508,12 @@ def generate_dataset(only_abstract = False):
     links_to_df = []
     content_to_df = []
 
+    one_titles_to_df = []
+    one_paper_authors_to_df = []
+    one_links_to_df = []
+    one_content_to_df = []
+    one_abstract_to_df = []
+
     for (url, paper_a, t) in tqdm(zip(links, paper_authors, titles)):
         print(f"{succesfull} successfull :)) out of {x} papers", end = "\r")
         succesfull += 1
@@ -512,6 +526,8 @@ def generate_dataset(only_abstract = False):
                         abstract = read_pdf_abstracts(pdf_reader)
                     else:
                         sections = read_pdf_whole(pdf_reader)
+                        full_text = "\n".join(sections)
+                        abstract = read_pdf_abstracts(pdf_reader)
 
                 else:
 
@@ -519,6 +535,8 @@ def generate_dataset(only_abstract = False):
                         abstract = pdf_reader.get('abstract')
                     else:
                         sections = pdf_reader.get('sections')
+                        full_text = "\n".join(sections)
+                        abstract = pdf_reader.get('abstract')
 
                 if only_abstract:
                     titles_to_df.append(t)
@@ -536,6 +554,13 @@ def generate_dataset(only_abstract = False):
                     paper_authors_to_df.extend(many_paper_a)
                     links_to_df.extend(many_url)
                     content_to_df.extend(sections)
+
+                    one_titles_to_df.append(t)
+                    one_paper_authors_to_df.append(paper_a)
+                    one_links_to_df.append(url)
+                    one_content_to_df.append(full_text)
+                    one_abstract_to_df.append(abstract)
+
             else:
                 succesfull -= 1
         except:
@@ -546,13 +571,13 @@ def generate_dataset(only_abstract = False):
     print("Len of paper authors: ", len(paper_authors_to_df))
     print("Len of content: ", len(content_to_df))
 
-    for index, item in enumerate([titles_to_df, paper_authors_to_df, links_to_df, content_to_df]):
-        df = pd.DataFrame({"content": item})
-        df.to_pickle(f'pickle_file_nr_{index}.pkl')
-
-    df = pd.DataFrame({"content": content_to_df, "authors": paper_authors_to_df, "links": links_to_df, "titles": titles_to_df})
+    df = pd.DataFrame({"content": content_to_df, "authors": paper_authors_to_df, "links": links_to_df, "title": titles_to_df})
     df.to_pickle('manymany.pkl')
+
+    df = pd.DataFrame({"content": one_content_to_df, "authors": one_paper_authors_to_df, "links": one_links_to_df, "title": one_titles_to_df, "abstract": one_abstract_to_df})
+    df.to_pickle('sosomany.pkl')
+
     print(succesfull)
 
-generate_dataset(only_abstract=True)
+generate_dataset(only_abstract=False)
 driver.quit()
