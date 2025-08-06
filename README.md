@@ -13,9 +13,9 @@ This is a proof-of-concept application meant to demonstrate a compentece search 
 <br>
 ### Create a .env file in the main directory
 - You can use the .env.example file as an example. Any environment variable associated with LangSmith is not needed, but can help with debugging openai_api errors or find out where and why the program does something stupid.
-- It's important to download the original MRST repository if you want to use the git search. If you don't download the original MRST repository, you will get an error if you include git search in the settings. You can go to [mrst github](https://github.com/SINTEF-AppliedCompSci/MRST) to download it.
-<br>
-The essential stuff is
+- It's important to download the original MRST repository if you want to use the git search. If you don't download the original MRST repository, you will get an error if you include git search in the settings. You can go to [mrst github](https://github.com/SINTEF-AppliedCompSci/MRST) to download it.  
+
+The essential stuff is  
 ```
   LANGCHAIN_OPENAI_API_KEY = <your_openai_api_key>  
   MRST_REPOSITORY_PATH = <full_path_to_downloaded_mrst_repository>
