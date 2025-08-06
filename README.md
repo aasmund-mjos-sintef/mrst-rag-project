@@ -2,6 +2,8 @@
 
 This is a proof-of-concept application meant to demonstrate a compentece search / guidance tool based on generativ AI using the MRST database of papers and documentation.
 
+![RAG pipeline](images/pipeline.png)
+
 ## Getting Started
 
 Clone the repository by running  
