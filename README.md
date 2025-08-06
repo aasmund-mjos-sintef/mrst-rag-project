@@ -19,8 +19,9 @@ It's important to download the original MRST repository if you want to use the g
 
 You need to be on python version newer or equal to 3.13
 Create a virtual environment by running  
-```bash # Create a virtual environment in the .venv directory
-  python3 -m venv .venv
+```bash
+  # Create a virtual environment in the .venv directory
+  python -m venv .venv
   # Activate the virtual environment
   source .venv/bin/activate
 ```
