@@ -22,7 +22,8 @@ Create a virtual environment by running
 ```bash # Create a virtual environment in the .venv directory
   python3 -m venv .venv
   # Activate the virtual environment
-  source .venv/bin/activate ```
+  source .venv/bin/activate
+```
 
 For this project you need graphviz downloaded on your computer:  
 - On Debian/Ubuntu systems run  
