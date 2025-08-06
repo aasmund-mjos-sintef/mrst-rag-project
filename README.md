@@ -21,7 +21,7 @@ You need to be on python version newer or equal to 3.13
 Create a virtual environment by running  
 ```bash
   # Create a virtual environment in the .venv directory
-  python -m venv .venv
+  python3 -m venv .venv
   # Activate the virtual environment
   source .venv/bin/activate
 ```
