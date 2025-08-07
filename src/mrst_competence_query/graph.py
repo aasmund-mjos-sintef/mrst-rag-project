@@ -737,7 +737,7 @@ def SearchAndEvaluateNode(state: State) -> State:
 
     if specter:
 
-        df = load_dataframe('mrst_abstracts_embedding_specter.pkl')
+        df = load_dataframe('mrst_chunks_embedding_specter.pkl')
         whole_df = load_dataframe('mrst_whole_articles.pkl')
         query_description = state.get('query_description')
 
@@ -757,7 +757,7 @@ def SearchAndEvaluateNode(state: State) -> State:
         sorted_df = df[df['cosine'] > threshold]
     
     else:
-        df = load_dataframe('mrst_abstracts_embedding.pkl')
+        df = load_dataframe('mrst_chunks_embedding.pkl')
         whole_df = load_dataframe('mrst_whole_articles.pkl')
         query_description = state.get('query_description')
 
@@ -776,26 +776,27 @@ def SearchAndEvaluateNode(state: State) -> State:
 
         sorted_df = df[df['cosine'] > threshold]
 
-    relevant_titles = set(df['title'])
+    relevant_titles = set(sorted_df['title'])
 
     if len(sorted_df) > 0:
 
         paper_df = whole_df[whole_df['title'].isin(relevant_titles)]
+        print(len(paper_df))
+
+        """
+        Perform the scoring system for all papers
+        """
 
         max_relevant_chunks_in_one_article = Counter(sorted_df['title']).most_common(1)[0][1]
 
         def cosine_score_from_title(title):
-            cosines = np.array(sorted_df[sorted_df['title'].sin([title])]['cosine'])
+            cosines = np.array(sorted_df[sorted_df['title'].isin([title])]['cosine'])
             n_relevant_chunks_in_one_article = np.shape(cosines)[0]
             average = np.mean(cosines)
             maximum = np.max(cosines)
             return (average + maximum + n_relevant_chunks_in_one_article/max_relevant_chunks_in_one_article)/3
 
-        paper_df['cosine_score'] = paper_df['title'].apply(cosine_score_from_title)
-
-        """
-        Perform the scoring system for all papers
-        """
+        paper_df['cosine_score'] = paper_df['title'].apply(lambda x: cosine_score_from_title(x))
 
         alpha = 1/3
 
@@ -817,11 +818,11 @@ def SearchAndEvaluateNode(state: State) -> State:
 
         authors_set = set()
 
-        for authors in df['authors'].tolist():
+        for authors in whole_df['authors'].tolist():
             for a in authors:
                 authors_total_n_papers[a] = authors_total_n_papers.get(a, 0) + 1
 
-        for authors, score in zip(sorted_df['authors'], sorted_df['score']):
+        for authors, score in zip(paper_df['authors'], paper_df['score']):
             for a in authors:
                 authors_set.add(a)
                 authors_papers_score[a] = authors_papers_score.get(a, 0) + (1+score)**2-1
@@ -843,7 +844,7 @@ def SearchAndEvaluateNode(state: State) -> State:
 
         if state.get('clustering'):
 
-            clustered_df = hdbscan_cluster(umap_reduce(sorted_df))
+            clustered_df = hdbscan_cluster(umap_reduce(paper_df))
 
             if not clustered_df.empty:
                 embeddings_768 = clustered_df['embedding'].tolist()
@@ -870,7 +871,7 @@ def SearchAndEvaluateNode(state: State) -> State:
 
                     different_clusters = set(clusters)
                     if len(different_clusters) > 3:
-                        paper_response = get_paper_response_if_not_cluster(query = state.get('query'), df=sorted_df.sort_values(by = 'score', ascending = False).head(10))
+                        paper_response = get_paper_response_if_not_cluster(query = state.get('query'), df=paper_df.sort_values(by = 'score', ascending = False).head(10))
                     else:
                         query = state.get('query')
                         for c in different_clusters:
@@ -880,11 +881,11 @@ def SearchAndEvaluateNode(state: State) -> State:
 
             else:
                 if state.get('text_answer', True):
-                    paper_response = get_paper_response_if_not_cluster(query = state.get('query'), df=sorted_df.sort_values(by = 'score', ascending = False).head(10))
+                    paper_response = get_paper_response_if_not_cluster(query = state.get('query'), df=paper_df.sort_values(by = 'score', ascending = False).head(10))
 
         else:
             if state.get('text_answer', True):
-                paper_response = get_paper_response_if_not_cluster(query = state.get('query'), df=sorted_df.sort_values(by = 'score', ascending = False).head(10))
+                paper_response = get_paper_response_if_not_cluster(query = state.get('query'), df=paper_df.sort_values(by = 'score', ascending = False).head(10))
 
         return {"authors_relevance_score": authors_relevance_score, "relevant_papers_df": sorted_df, "c_fig": c_fig, "c_name": c_name, "paper_response": paper_response}
 
