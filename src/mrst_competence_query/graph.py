@@ -474,12 +474,13 @@ def InformationNode(state: State) -> State:
         - polymer flooding
             
     The problem description should be a short sentence describing the users problem.
-    You can use the tool 'web_search_mrst' to get relevant content about mrst modules,
-    and further links from the mrst webpage.
-    Only use the tool if you're sure the link is relevant.
-    Here's a list of possible start links, if you are going to use the tool, choose the most relevant one:
+    Use the tool 'web_search_mrst' to get relevant content about specific MRST modules,
+    and further links from the MRST webpage.
+    Here's a list of possible start modules,
+    if you are going to use the tool,
+    choose the most relevant one:
 
-        {web_search_mrst.invoke(input = 'https://www.sintef.no/projectweb/mrst/modules/')[1]}
+        {[link for link in web_search_mrst.invoke(input = 'https://www.sintef.no/projectweb/mrst/modules/')[1] if 'modules' in link]}
 
     """),
     ("user", query)]
@@ -768,7 +769,7 @@ def SearchAndEvaluateNode(state: State) -> State:
         vec_prod = np.einsum('i,k->ki',np.linalg.norm(vector, axis = -1),np.linalg.norm(embeddings, axis = -1))
         cosines = dot_prod/vec_prod
         df['cosine'] = np.max(cosines, axis = -1)
-        threshold = min([0.5, np.max(cosines)-0.2])
+        threshold = max([0.35, min([np.max(cosines)-0.2, 0.55])])
 
         sorted_df = df[df['cosine'] > threshold]
 
