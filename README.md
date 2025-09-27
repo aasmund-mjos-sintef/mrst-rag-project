@@ -57,3 +57,6 @@ If everything is set up correctly, you should see the image below. However while
 
 ![Excecution Graph](images/graph_vizualization.png)
 
+## Information about datasets
+
+For a detailed list of the articles included in the datasets, please go to src/mrst_competence_query/datasets and check out the two .txt files for a detailed list
