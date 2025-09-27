@@ -77,7 +77,8 @@ def run_graph(state: graph.State = None):
                         clustering = st.session_state.clustering,
                         github = st.session_state.github,
                         chapter_images = st.session_state.chapter_images,
-                        text_answer = st.session_state.text_answer)
+                        text_answer = st.session_state.text_answer,
+                        dataset= st.session_state.dataset)
         
         else:
             return
@@ -174,7 +175,8 @@ def author_pills_callback():
             clustering=st.session_state.clustering,
             github=st.session_state.github,
             chapter_images=st.session_state.chapter_images,
-            text_answer=st.session_state.text_answer)
+            text_answer=st.session_state.text_answer,
+            dataset= st.session_state.dataset)
         run_graph(state)
 
 def query_pills_callback():
@@ -186,7 +188,8 @@ def query_pills_callback():
             clustering=st.session_state.clustering,
             github=st.session_state.github,
             chapter_images=st.session_state.chapter_images,
-            text_answer=st.session_state.text_answer)
+            text_answer=st.session_state.text_answer,
+            dataset= st.session_state.dataset)
         run_graph(state)
 
 def create_suggestions():
@@ -218,6 +221,7 @@ with button:
     st.checkbox(label = "Chapter Images", key = "chapter_images", value=True, help="If you want to show a graph over the relevant chapters in the MRST textbooks, check this box. This will take a bit longer to run.")
     st.checkbox(label = "Text Answer", key = "text_answer", value=True, help="If you want to get a text answer to your query, check this box. This will take a bit longer to run.")
     st.checkbox(label = "Git", key = "github", value=False, help="If you want to retrieve relevant github commits in the MRST repository, check this box. This will take a bit longer to run.")
+    st.pills(label = "Dataset", selection_mode="single", key = "dataset", options=["Abstracts", "Whole Articles"], default = "Abstracts", help = "Choose what kind of dataset you want to use for the search. Abstracts will naturally be much smaller individually, but the dataset contains approximately 5 times as many articles, as the whole article dataset. See the github repository for detailed information about which articles are in which dataset. ")
 
 response_area = st.markdown(st.session_state.response)
 
@@ -298,7 +302,8 @@ if bool(st.session_state.c_fig):
                             clustering = st.session_state.clustering,
                             github = st.session_state.github,
                             chapter_images = st.session_state.chapter_images,
-                            text_answer=st.session_state.text_answer),),
+                            text_answer=st.session_state.text_answer,
+                            dataset = st.session_state.dataset),),
                           help = description)
 
     with suggestion_box:

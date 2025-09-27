@@ -70,10 +70,6 @@ mini_client = ChatOpenAI(model="gpt-4.1-mini", temperature=0.0, openai_api_key=l
 tool_client = ChatOpenAI(model="gpt-4o-mini", temperature=0.0, openai_api_key=langchain_openai_api_key)
 tool_agent = create_react_agent(model = tool_client, tools = tools, response_format = QueryDescription)
 vector_embedding_model = SentenceTransformer('sentence-transformers/all-mpnet-base-v2')
-specter = False
-specter_embedding_model = None
-if specter:
-    specter_embedding_model = SentenceTransformer("allenai-specter")
 
 print("Initializing Graph...")
 
@@ -109,6 +105,7 @@ class State(TypedDict):
     github: bool
     chapter_images: bool
     text_answer: bool
+    dataset: Literal["Abstracts", "Whole Articles"]
 
 """
 Helper objects
@@ -732,29 +729,10 @@ def SearchAndEvaluateNode(state: State) -> State:
     Retrieves relevant abstracts to the user's query, reranks the papers and generates text about relevant authors based on the reranked papers
     """
 
-    print("--Search and Evaluate Node Abstracts--")
+    if state.get('dataset') == "Abstracts":
 
-    if specter:
+        print("--Search and Evaluate Node Abstracts--")
 
-        df = load_dataframe('mrst_abstracts_embedding_specter.pkl')
-        query_description = state.get('query_description')
-
-        keywords = query_description.keywords
-        keywords = keywords if len(keywords) else [query_description.problem_description]
-        keyword_embeddings = vector_embedding_model.encode(keywords)
-
-        vector = np.array(specter_embedding_model.encode(query_description.keywords + [query_description.problem_description]))
-
-        embeddings = np.array(df['embedding'].tolist())
-        dot_prod = np.einsum('ij,kj->ki', vector, embeddings)
-        vec_prod = np.einsum('i,k->ki',np.linalg.norm(vector, axis = -1),np.linalg.norm(embeddings, axis = -1))
-        cosines = dot_prod/vec_prod
-        df['cosine'] = np.max(cosines, axis = -1)
-
-        threshold = np.max(cosines)-0.07
-        sorted_df = df[df['cosine'] > threshold]
-    
-    else:
         df = load_dataframe('mrst_abstracts_embedding.pkl')
         query_description = state.get('query_description')
 
@@ -773,101 +751,240 @@ def SearchAndEvaluateNode(state: State) -> State:
 
         sorted_df = df[df['cosine'] > threshold]
 
-    if len(sorted_df) > 0:
+        if len(sorted_df) > 0:
 
-        n_bigrams = 5
+            n_bigrams = 5
 
-        top_bigrams = [[tup[0] for tup in get_bigram_freq(x).most_common(n_bigrams)] for x in sorted_df['content'].tolist()]
+            top_bigrams = [[tup[0] for tup in get_bigram_freq(x).most_common(n_bigrams)] for x in sorted_df['content'].tolist()]
 
-        top_bigrams_embedded = np.array([vector_embedding_model.encode(x) for x in top_bigrams])
+            top_bigrams_embedded = np.array([vector_embedding_model.encode(x) for x in top_bigrams])
 
-        dot_prod = np.einsum('xnj,kj->xnk', top_bigrams_embedded, keyword_embeddings)
-        vec_prod = np.einsum('xn,k->xnk',np.linalg.norm(top_bigrams_embedded, axis = -1),np.linalg.norm(keyword_embeddings, axis = -1))
-        cosines = dot_prod/vec_prod
+            dot_prod = np.einsum('xnj,kj->xnk', top_bigrams_embedded, keyword_embeddings)
+            vec_prod = np.einsum('xn,k->xnk',np.linalg.norm(top_bigrams_embedded, axis = -1),np.linalg.norm(keyword_embeddings, axis = -1))
+            cosines = dot_prod/vec_prod
 
-        sorted_df['avg_high_cosine'] = np.mean(np.max(cosines, axis = -1), axis = -1)
-        sorted_df['score'] = [c + a_h_c for c, a_h_c in zip(sorted_df['cosine'], sorted_df['avg_high_cosine'])]
+            sorted_df['avg_high_cosine'] = np.mean(np.max(cosines, axis = -1), axis = -1)
+            sorted_df['score'] = [c + a_h_c for c, a_h_c in zip(sorted_df['cosine'], sorted_df['avg_high_cosine'])]
 
-        authors_abstract_score  = {}
-        authors_n_rel_abstracts = {}
-        authors_total_n_papers  = {}
-        authors_relevance_score = {}
+            authors_abstract_score  = {}
+            authors_n_rel_abstracts = {}
+            authors_total_n_papers  = {}
+            authors_relevance_score = {}
 
-        authors_set = set()
+            authors_set = set()
 
-        for authors in df['authors'].tolist():
-            for a in authors:
-                authors_total_n_papers[a] = authors_total_n_papers.get(a, 0) + 1
+            for authors in df['authors'].tolist():
+                for a in authors:
+                    authors_total_n_papers[a] = authors_total_n_papers.get(a, 0) + 1
 
-        for authors, score in zip(sorted_df['authors'], sorted_df['score']):
-            for a in authors:
-                authors_set.add(a)
-                authors_abstract_score[a] = authors_abstract_score.get(a, 0) + (1+score)**2-1
-                authors_n_rel_abstracts[a] = authors_n_rel_abstracts.get(a, 0) + 1
-        
-        max_n_papers = 0
-        for a in authors_set:
-            if authors_total_n_papers[a] > max_n_papers:
-                max_n_papers = authors_total_n_papers[a]
+            for authors, score in zip(sorted_df['authors'], sorted_df['score']):
+                for a in authors:
+                    authors_set.add(a)
+                    authors_abstract_score[a] = authors_abstract_score.get(a, 0) + (1+score)**2-1
+                    authors_n_rel_abstracts[a] = authors_n_rel_abstracts.get(a, 0) + 1
+            
+            max_n_papers = 0
+            for a in authors_set:
+                if authors_total_n_papers[a] > max_n_papers:
+                    max_n_papers = authors_total_n_papers[a]
 
-        gamma = 0.2
+            gamma = 0.2
 
-        for a in authors_set:
-            authors_relevance_score[a] = 100*authors_abstract_score[a]/(authors_total_n_papers[a]*max_n_papers)**gamma
+            for a in authors_set:
+                authors_relevance_score[a] = 100*authors_abstract_score[a]/(authors_total_n_papers[a]*max_n_papers)**gamma
 
-        c_fig = None
-        c_name = None
-        paper_response = ""
+            c_fig = None
+            c_name = None
+            paper_response = ""
 
-        if state.get('clustering'):
+            if state.get('clustering'):
 
-            clustered_df = hdbscan_cluster(umap_reduce(sorted_df))
+                clustered_df = hdbscan_cluster(umap_reduce(sorted_df))
 
-            if not clustered_df.empty:
-                embeddings_768 = clustered_df['embedding'].tolist()
+                if not clustered_df.empty:
+                    embeddings_768 = clustered_df['embedding'].tolist()
 
-                fig, ax = plt.subplots(figsize=(6, 4))
-                fig.set_facecolor('#faf9f7')
-                ax.set_facecolor('#faf9f7')
-                clusters = clustered_df['cluster'].tolist()
+                    fig, ax = plt.subplots(figsize=(6, 4))
+                    fig.set_facecolor('#faf9f7')
+                    ax.set_facecolor('#faf9f7')
+                    clusters = clustered_df['cluster'].tolist()
 
-                for_visual_umap_reducer = UMAP(n_neighbors=15, min_dist=0.1,  metric='euclidean', n_components=2, random_state=42)
-                umap_embeddings = for_visual_umap_reducer.fit_transform(embeddings_768)
-                x_umap = [embd[0] for embd in umap_embeddings]
-                y_umap = [embd[1] for embd in umap_embeddings]
-                ax.scatter(x_umap, y_umap, c=[cluster_to_color.get(x) for x in clusters])
-                ax.set_axis_off()
-                c_fig = fig
-                c_name = cluster_names(clustered_df)
+                    for_visual_umap_reducer = UMAP(n_neighbors=15, min_dist=0.1,  metric='euclidean', n_components=2, random_state=42)
+                    umap_embeddings = for_visual_umap_reducer.fit_transform(embeddings_768)
+                    x_umap = [embd[0] for embd in umap_embeddings]
+                    y_umap = [embd[1] for embd in umap_embeddings]
+                    ax.scatter(x_umap, y_umap, c=[cluster_to_color.get(x) for x in clusters])
+                    ax.set_axis_off()
+                    c_fig = fig
+                    c_name = cluster_names(clustered_df)
 
-                if state.get('text_answer', True):
+                    if state.get('text_answer', True):
 
-                    c_to_n = {}
-                    for c, n, _ in c_name:
-                        c_to_n[c] = n
+                        c_to_n = {}
+                        for c, n, _ in c_name:
+                            c_to_n[c] = n
 
-                    different_clusters = set(clusters)
-                    if len(different_clusters) > 3:
+                        different_clusters = set(clusters)
+                        if len(different_clusters) > 3:
+                            paper_response = get_paper_response_if_not_cluster(query = state.get('query'), df=sorted_df.sort_values(by = 'score', ascending = False).head(10))
+                        else:
+                            query = state.get('query')
+                            for c in different_clusters:
+                                paper_response += f"#### {c_to_n.get(c)}\n"
+                                paper_response += get_cluster_response(query = query, df = clustered_df[clustered_df['cluster'] == c].sort_values(by = 'score', ascending = False).head(5))
+                                paper_response += "\n\n"
+
+                else:
+                    if state.get('text_answer', True):
                         paper_response = get_paper_response_if_not_cluster(query = state.get('query'), df=sorted_df.sort_values(by = 'score', ascending = False).head(10))
-                    else:
-                        query = state.get('query')
-                        for c in different_clusters:
-                            paper_response += f"#### {c_to_n.get(c)}\n"
-                            paper_response += get_cluster_response(query = query, df = clustered_df[clustered_df['cluster'] == c].sort_values(by = 'score', ascending = False).head(5))
-                            paper_response += "\n\n"
 
             else:
                 if state.get('text_answer', True):
                     paper_response = get_paper_response_if_not_cluster(query = state.get('query'), df=sorted_df.sort_values(by = 'score', ascending = False).head(10))
 
+            return {"authors_relevance_score": authors_relevance_score, "relevant_papers_df": sorted_df, "c_fig": c_fig, "c_name": c_name, "paper_response": paper_response}
         else:
-            if state.get('text_answer', True):
-                paper_response = get_paper_response_if_not_cluster(query = state.get('query'), df=sorted_df.sort_values(by = 'score', ascending = False).head(10))
-
-        return {"authors_relevance_score": authors_relevance_score, "relevant_papers_df": sorted_df, "c_fig": c_fig, "c_name": c_name, "paper_response": paper_response}
-
+            return {}
+    
     else:
-        return {}
+
+        print("--Search and Evaluate Node Articles--")
+
+        df = load_dataframe('mrst_chunks_embedding.pkl')
+        whole_df = load_dataframe('mrst_whole_articles.pkl')
+        query_description = state.get('query_description')
+
+        keywords = query_description.keywords
+        keywords = keywords if len(keywords) else [query_description.problem_description]
+        keyword_embeddings = vector_embedding_model.encode(keywords)
+
+        vector = vector_embedding_model.encode(query_description.keywords + [query_description.problem_description])
+
+        embeddings = np.array(df['embedding'].tolist())
+        dot_prod = np.einsum('ij,kj->ki', vector, embeddings)
+        vec_prod = np.einsum('i,k->ki',np.linalg.norm(vector, axis = -1),np.linalg.norm(embeddings, axis = -1))
+        cosines = dot_prod/vec_prod
+        df['cosine'] = np.max(cosines, axis = -1)
+        threshold = min([0.5, np.max(cosines)-0.2])
+
+        sorted_df = df[df['cosine'] > threshold]
+
+        relevant_titles = set(sorted_df['title'])
+
+        if len(sorted_df) > 0:
+
+            paper_df = whole_df[whole_df['title'].isin(relevant_titles)]
+            print(len(paper_df))
+
+            """
+            Perform the scoring system for all papers
+            """
+
+            max_relevant_chunks_in_one_article = Counter(sorted_df['title']).most_common(1)[0][1]
+
+            def cosine_score_from_title(title):
+                cosines = np.array(sorted_df[sorted_df['title'].isin([title])]['cosine'])
+                n_relevant_chunks_in_one_article = np.shape(cosines)[0]
+                average = np.mean(cosines)
+                maximum = np.max(cosines)
+                return (average + maximum + n_relevant_chunks_in_one_article/max_relevant_chunks_in_one_article)/3
+
+            paper_df['cosine_score'] = paper_df['title'].apply(lambda x: cosine_score_from_title(x))
+
+            alpha = 1/3
+
+            n_bigrams = 10
+            top_bigrams = [[tup[0] for tup in get_bigram_freq(x).most_common(n_bigrams)] for x in paper_df['content'].tolist()]
+            top_bigrams_embedded = np.array([vector_embedding_model.encode(x) for x in top_bigrams])
+
+            dot_prod = np.einsum('xnj,kj->xnk', top_bigrams_embedded, keyword_embeddings)
+            vec_prod = np.einsum('xn,k->xnk',np.linalg.norm(top_bigrams_embedded, axis = -1),np.linalg.norm(keyword_embeddings, axis = -1))
+            cosines = dot_prod/vec_prod
+
+            paper_df['avg_high_score'] = np.mean(np.max(cosines, axis = -1), axis = -1)
+            paper_df['score'] = [alpha*c + a_h_c for c, a_h_c in zip(paper_df['cosine_score'], paper_df['avg_high_score'])]
+
+            authors_papers_score  = {}
+            authors_n_rel_abstracts = {}
+            authors_total_n_papers  = {}
+            authors_relevance_score = {}
+
+            authors_set = set()
+
+            for authors in whole_df['authors'].tolist():
+                for a in authors:
+                    authors_total_n_papers[a] = authors_total_n_papers.get(a, 0) + 1
+
+            for authors, score in zip(paper_df['authors'], paper_df['score']):
+                for a in authors:
+                    authors_set.add(a)
+                    authors_papers_score[a] = authors_papers_score.get(a, 0) + (1+score)**2-1
+                    authors_n_rel_abstracts[a] = authors_n_rel_abstracts.get(a, 0) + 1
+            
+            max_n_papers = 0
+            for a in authors_set:
+                if authors_total_n_papers[a] > max_n_papers:
+                    max_n_papers = authors_total_n_papers[a]
+
+            gamma = 0.2
+
+            for a in authors_set:
+                authors_relevance_score[a] = 100*authors_papers_score[a]/(authors_total_n_papers[a]*max_n_papers)**gamma
+
+            c_fig = None
+            c_name = None
+            paper_response = ""
+
+            if state.get('clustering'):
+
+                clustered_df = hdbscan_cluster(umap_reduce(paper_df))
+
+                if not clustered_df.empty:
+                    embeddings_768 = clustered_df['embedding'].tolist()
+
+                    fig, ax = plt.subplots(figsize=(6, 4))
+                    fig.set_facecolor('#faf9f7')
+                    ax.set_facecolor('#faf9f7')
+                    clusters = clustered_df['cluster'].tolist()
+
+                    for_visual_umap_reducer = UMAP(n_neighbors=15, min_dist=0.1,  metric='euclidean', n_components=2, random_state=42)
+                    umap_embeddings = for_visual_umap_reducer.fit_transform(embeddings_768)
+                    x_umap = [embd[0] for embd in umap_embeddings]
+                    y_umap = [embd[1] for embd in umap_embeddings]
+                    ax.scatter(x_umap, y_umap, c=[cluster_to_color.get(x) for x in clusters])
+                    ax.set_axis_off()
+                    c_fig = fig
+                    c_name = cluster_names(clustered_df)
+
+                    if state.get('text_answer', True):
+
+                        c_to_n = {}
+                        for c, n, _ in c_name:
+                            c_to_n[c] = n
+
+                        different_clusters = set(clusters)
+                        if len(different_clusters) > 3:
+                            paper_response = get_paper_response_if_not_cluster(query = state.get('query'), df=paper_df.sort_values(by = 'score', ascending = False).head(10))
+                        else:
+                            query = state.get('query')
+                            for c in different_clusters:
+                                paper_response += f"#### {c_to_n.get(c)}\n"
+                                paper_response += get_cluster_response(query = query, df = clustered_df[clustered_df['cluster'] == c].sort_values(by = 'score', ascending = False).head(5))
+                                paper_response += "\n\n"
+
+                else:
+                    if state.get('text_answer', True):
+                        paper_response = get_paper_response_if_not_cluster(query = state.get('query'), df=paper_df.sort_values(by = 'score', ascending = False).head(10))
+
+            else:
+                if state.get('text_answer', True):
+                    paper_response = get_paper_response_if_not_cluster(query = state.get('query'), df=paper_df.sort_values(by = 'score', ascending = False).head(10))
+
+            return {"authors_relevance_score": authors_relevance_score, "relevant_papers_df": sorted_df, "c_fig": c_fig, "c_name": c_name, "paper_response": paper_response}
+
+        else:
+            return {}
+
 
 def GitNode(state: State) -> State:
     """
