@@ -874,7 +874,6 @@ def SearchAndEvaluateNode(state: State) -> State:
         if len(sorted_df) > 0:
 
             paper_df = whole_df[whole_df['title'].isin(relevant_titles)]
-            print(len(paper_df))
 
             """
             Perform the scoring system for all papers
