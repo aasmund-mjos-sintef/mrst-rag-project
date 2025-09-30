@@ -52,6 +52,21 @@ if "c_fig" not in st.session_state:
 if "c_name" not in st.session_state:
     st.session_state.c_name = []
 
+if "dataset" not in st.session_state:
+    st.session_state.dataset = "Abstracts"
+
+if "clustering" not in st.session_state:
+    st.session_state.clustering = True
+
+if "chapter_images" not in st.session_state:
+    st.session_state.chapter_images = True
+
+if "text_answer" not in st.session_state:
+    st.session_state.text_answer = True
+
+if "github" not in st.session_state:
+    st.session_state.github = False
+
 st.markdown("#### Hi, I am an assistant made by SINTEF for the Matlab Reservoir Simulation Toolbox. I can assist you by guiding you to which MRST developers you should contact based on your specific problem, and where in the MRST textbooks you might be able to get help regarding your problem.")
 
 query, code_query, button = st.columns([6,6,1])
@@ -161,6 +176,21 @@ def run_graph(state: graph.State = None):
 def reset_func():
     st.session_state.query = ""
     st.session_state.code_query = ""
+    st.session_state.response = ""
+    st.session_state.figures = []
+    st.session_state.authors = []
+    st.session_state.github_authors = []
+    st.session_state.suggestions = []
+    st.session_state.query_suggestions = []
+    st.session_state.auto_query = ""
+    st.session_state.auto_author = ""
+    st.session_state.c_fig = ""
+    st.session_state.c_name = []
+    st.session_state.dataset = "Abstracts"
+    st.session_state.clustering = True
+    st.session_state.chapter_images = True
+    st.session_state.text_answer = True
+    st.session_state.github = False
 
 def author_pills_callback():
     if st.session_state.get('auto_author'):
@@ -198,7 +228,6 @@ def create_suggestions():
         st.markdown('#### Query Suggestions')
         st.pills(label = 'Find out more about these topics',
                  options = st.session_state.query_suggestions,
-                 default = None,
                  selection_mode="single",
                  label_visibility='hidden',
                  key = 'auto_query',
@@ -208,7 +237,6 @@ def create_suggestions():
         st.markdown('#### Suggested Authors')
         st.pills(label = 'Find out more about the authors',
                  options = st.session_state.suggestions,
-                 default = None,
                  selection_mode="single",
                  label_visibility='hidden',
                  key = 'auto_author',
@@ -217,11 +245,11 @@ def create_suggestions():
 with button:
     st.button(label = "Generate", on_click=run_graph, type = "primary")
     st.button(label = "Reset", on_click=reset_func)
-    st.checkbox(label = "Cluster", key = "clustering", value=True, help = "If you want to cluster the MRST papers based on their content, check this box. This will take a bit longer to run.")
-    st.checkbox(label = "Chapter Images", key = "chapter_images", value=True, help="If you want to show a graph over the relevant chapters in the MRST textbooks, check this box. This will take a bit longer to run.")
-    st.checkbox(label = "Text Answer", key = "text_answer", value=True, help="If you want to get a text answer to your query, check this box. This will take a bit longer to run.")
-    st.checkbox(label = "Git", key = "github", value=False, help="If you want to retrieve relevant github commits in the MRST repository, check this box. This will take a bit longer to run.")
-    st.pills(label = "Dataset", selection_mode="single", key = "dataset", options=["Abstracts", "Whole Articles"], default = "Abstracts", help = "Choose what kind of dataset you want to use for the search. Abstracts will naturally be much smaller individually, but the dataset contains approximately 5 times as many articles, as the whole article dataset. See the github repository for detailed information about which articles are in which dataset. ")
+    st.checkbox(label = "Cluster", key = "clustering", help = "If you want to cluster the MRST papers based on their content, check this box. This will take a bit longer to run.")
+    st.checkbox(label = "Chapter Images", key = "chapter_images", help="If you want to show a graph over the relevant chapters in the MRST textbooks, check this box. This will take a bit longer to run.")
+    st.checkbox(label = "Text Answer", key = "text_answer", help="If you want to get a text answer to your query, check this box. This will take a bit longer to run.")
+    st.checkbox(label = "Git", key = "github", help="If you want to retrieve relevant github commits in the MRST repository, check this box. This will take a bit longer to run.")
+    st.pills(label = "Dataset", selection_mode="single", key = "dataset", options=["Abstracts", "Whole Articles"], help = "Choose what kind of dataset you want to use for the search. Abstracts will naturally be much smaller individually, but the dataset contains approximately 5 times as many articles, as the whole article dataset. See the github repository for detailed information about which articles are in which dataset. ")
 
 response_area = st.markdown(st.session_state.response)
 
